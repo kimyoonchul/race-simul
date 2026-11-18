@@ -167,14 +167,16 @@
     g.strokeStyle = 'rgba(255,255,255,0.12)'; g.beginPath(); g.moveTo(c, 10); g.lineTo(c, W - 10); g.moveTo(10, c); g.lineTo(W - 10, c); g.stroke();
     g.fillStyle = 'rgba(147,160,176,0.9)'; g.font = '600 18px "Barlow Condensed", "Arial Narrow", sans-serif'; g.textAlign = 'center';
     g.fillText('가속', c, 18); g.fillText('제동', c, W - 6);
+    // 횡방향은 실차 G미터처럼 몸이 쏠리는 쪽으로 표시: 좌회전이면 점이 오른쪽 (aLat +는 좌회전)
+    g.textAlign = 'left'; g.fillText('우회전', 4, c - 8); g.textAlign = 'right'; g.fillText('좌회전', W - 4, c - 8); g.textAlign = 'center';
     ggTrail.push([st.aLat, st.aLong]); if (ggTrail.length > 46) ggTrail.shift();
     var tc = css('--ice');
     for (i = 1; i < ggTrail.length; i++) {
       g.globalAlpha = i / ggTrail.length * 0.75; g.strokeStyle = tc; g.lineWidth = 3;
-      g.beginPath(); g.moveTo(c - ggTrail[i - 1][0] * sc, c - ggTrail[i - 1][1] * sc); g.lineTo(c - ggTrail[i][0] * sc, c - ggTrail[i][1] * sc); g.stroke();
+      g.beginPath(); g.moveTo(c + ggTrail[i - 1][0] * sc, c - ggTrail[i - 1][1] * sc); g.lineTo(c + ggTrail[i][0] * sc, c - ggTrail[i][1] * sc); g.stroke();
     }
     g.globalAlpha = 1;
-    var x = c - st.aLat * sc, y = c - st.aLong * sc;
+    var x = c + st.aLat * sc, y = c - st.aLong * sc;
     g.fillStyle = st.aLong < -0.15 ? css('--red') : '#fff'; g.beginPath(); g.arc(x, y, 9, 0, 6.3); g.fill();
     g.strokeStyle = '#06080b'; g.lineWidth = 2; g.stroke();
   }
