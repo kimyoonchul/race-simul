@@ -3,7 +3,7 @@
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
   var S, cb, cache = {}, mini = {}, tl = {}, lapSpeed = [], ggTrail = [], bannerTimer = 0, theme = 'z4';
-  var NU = 300;
+  var NU = 300, LG_N = 8, LG_STEP = 0.12; // 가감속 바: 한 칸 0.12g
 
   function clamp(x, a, b) { return x < a ? a : x > b ? b : x; }
   function fmtLap(t, d) { d = d == null ? 2 : d; var m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(d); }
@@ -46,6 +46,7 @@
     var sh = $('shift'); sh.innerHTML = '';
     for (var k = 0; k < 14; k++) sh.appendChild(document.createElement('i'));
     cache.lit = -1;
+    ['lgDec', 'lgAcc'].forEach(function (id) { var e = $(id); e.innerHTML = ''; for (var q = 0; q < LG_N; q++) e.appendChild(document.createElement('i')); });
   }
 
   // ── 미니맵 ───────────────────────────────────────────────────────
@@ -181,6 +182,25 @@
     g.strokeStyle = '#06080b'; g.lineWidth = 2; g.stroke();
   }
 
+  // ── 가속·감속 표시 ───────────────────────────────────────────────
+  // GPS 속도의 변화율(종가속도)이라 화면의 속도 숫자와 항상 같은 방향입니다.
+  // 경계에서 깜빡이지 않도록 켜지는 값과 꺼지는 값을 다르게 둡니다.
+  function drawLong(st) {
+    var a = st.aLong, s0 = cache.lgs || 0, s = s0;
+    if (s0 === 1) { if (a < 0.03) s = a < -0.10 ? -1 : 0; }
+    else if (s0 === -1) { if (a > -0.05) s = a > 0.06 ? 1 : 0; }
+    else s = a > 0.06 ? 1 : a < -0.10 ? -1 : 0;
+    if (s !== s0 || cache.lgs === undefined) { cache.lgs = s; $('lg').setAttribute('data-s', s > 0 ? 'acc' : s < 0 ? 'dec' : 'hold'); }
+    set('lgk', s > 0 ? '▲ 가속' : s < 0 ? '▼ 감속' : st.v < 0.3 ? '정지' : '정속');
+    set('lgv', s ? (s > 0 ? '+' : '−') + Math.abs(a).toFixed(2) + 'g' : '');
+    var nA = s > 0 ? clamp(Math.ceil(a / LG_STEP), 1, LG_N) : 0, nD = s < 0 ? clamp(Math.ceil(-a / LG_STEP), 1, LG_N) : 0, i;
+    if (cache.lgA !== nA) { cache.lgA = nA; var ea = $('lgAcc').children; for (i = 0; i < LG_N; i++) ea[i].className = i < nA ? 'on' : ''; }
+    if (cache.lgD !== nD) { cache.lgD = nD; var ed = $('lgDec').children; for (i = 0; i < LG_N; i++) ed[i].className = i < nD ? 'on' : ''; }
+    // 강한 제동에서만 화면 가장자리가 붉어짐(가속은 랩의 절반 가까이라 화면 효과를 쓰지 않음)
+    var fx = (clamp((-a - 0.25) / 0.6, 0, 1) * 0.9).toFixed(2);
+    if (cache.brakefx !== fx) { cache.brakefx = fx; $('brakefx').style.opacity = fx; }
+  }
+
   // ── 초기화 ───────────────────────────────────────────────────────
   function init(session, callbacks, spec) {
     S = session; cb = callbacks; cache = {}; ggTrail = [];
@@ -269,12 +289,14 @@
       $('tGlow').style.opacity = (0.35 + 0.65 * f).toFixed(2);
       var w = st.rpm * Math.PI / 30, tq = st.thr * Math.min(car.torqueNm || 500, car.powerW / Math.max(w, 60));
       set('torque', Math.round(tq / 5) * 5);
-      set('boost', (st.thr * clamp((st.rpm - 1300) / 1500, 0, 1) * 1.05).toFixed(2));
+      set('boost', Math.abs(st.thr * clamp((st.rpm - 1300) / 1500, 0, 1) * 1.05).toFixed(2)); // abs: -0.00 표기 방지
     }
     if (speedo) $('sVal').setAttribute('d', arc(speedo, 0, clamp(st.v * 3.6 / speedo.max, 0, 1)));
     var leds = $('shift').children, lit = clamp(Math.ceil((st.rpm - (red - 2400)) / 2200 * 14), 0, 14), flash = st.rpm > red - 260 && (st.wall * 12 | 0) % 2 === 0;
     if (cache.lit !== lit) { cache.lit = lit; for (var i = 0; i < 14; i++) leds[i].className = i < lit ? (i < 6 ? 'g' : i < 10 ? 'y' : 'r') : ''; }
     cls('shift', flash ? 'flash' : '');
+
+    drawLong(st);
 
     $('thr').firstChild.style.height = (st.thr * 100).toFixed(0) + '%';
     $('brk').firstChild.style.height = (st.brk * 100).toFixed(0) + '%';

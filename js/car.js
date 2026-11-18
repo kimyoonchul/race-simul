@@ -237,13 +237,22 @@
       });
     }
 
-    var wheels = [], flames = [], steerWheel = null;
+    var wheels = [], flames = [], brakeGlows = [], brakeLit = 0, steerWheel = null;
     if (!ghost) {
+      // 제동등 글로우: 블룸이 없어 발광만으로는 잘 안 보이므로 붉은 빛 번짐을 겹칩니다.
+      // 가산 블렌딩은 흰 차체 위에서 하얗게 날아가므로 일반 알파 블렌딩을 씁니다.
+      var brakeTex = glowTexture(THREE, 'rgba(255,58,40,1)', 'rgba(255,22,12,0.5)');
+      var brakeGlow = function (x, y, z, w, h, k) {
+        var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: brakeTex, depthWrite: false, transparent: true, opacity: 0 }));
+        sp.position.set(x, y, z); sp.scale.set(w, h, 1); sp.userData.k = k; chassis.add(sp); brakeGlows.push(sp);
+      };
       // ── 유리·램프·트림 패치 ────────────────────────────────────────
       [-1, 1].forEach(function (sg) {
         spec.glass.forEach(function (g) { add(patch(THREE, sh.cabin, g[0], g[1], g[2], g[3], 12, 6, 0.006, sg), M.glass); });
         add(patch(THREE, sh.body, D.nose - spec.head[0], D.nose - spec.head[1], spec.head[2], spec.head[3], 10, 5, 0.006, sg), M.head);
-        add(patch(THREE, sh.body, D.tail + spec.tail[0], D.tail + spec.tail[1], spec.tail[2], spec.tail[3], 12, 3, 0.006, sg), M.tail);
+        var tailG = patch(THREE, sh.body, D.tail + spec.tail[0], D.tail + spec.tail[1], spec.tail[2], spec.tail[3], 12, 3, 0.006, sg);
+        add(tailG, M.tail); tailG.computeBoundingBox();
+        brakeGlow(D.tail - 0.04, (tailG.boundingBox.min.y + tailG.boundingBox.max.y) / 2, (tailG.boundingBox.min.z + tailG.boundingBox.max.z) / 2 * 0.93, 0.78, 0.44, 0.95);
         add(patch(THREE, sh.body, D.axF - 0.635, D.axF - 0.435, 0.14, 0.4, 4, 5, 0.006, sg), M.trim);            // 펜더 벤트
         add(patch(THREE, sh.body, D.axR + 0.405, D.axF - 0.405, 0.0, 0.1, 16, 2, 0.007, sg), M.trim);            // 사이드 스커트
         add(patch(THREE, sh.body, D.tail + 0.006, D.tail + 0.454, 0.0, 0.2, 10, 3, 0.007, sg), M.trim);          // 리어 디퓨저
@@ -270,6 +279,10 @@
       box(0.02, 0.115, 0.5, M.plate, D.tail - 0.002, 0.59, 0);                                   // 번호판(빈 판)
       box(0.02, 0.014, 0.36, M.tail, spec.brakeBar[0], spec.brakeBar[1], 0);                      // 보조 제동등
       if (spec.lightBar) box(0.02, 0.03, 1.2, M.tail, D.tail + 0.004, 0.87, 0);
+      brakeGlow(spec.brakeBar[0] - 0.03, spec.brakeBar[1], 0, 0.62, 0.16, 0.9);
+      // 노면에 비치는 붉은 빛
+      var spill = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 2.8), new THREE.MeshBasicMaterial({ map: brakeTex, transparent: true, depthWrite: false, opacity: 0 }));
+      spill.rotation.x = -Math.PI / 2; spill.position.set(D.tail - 1.05, 0.045, 0); spill.renderOrder = 3; spill.userData.k = 0.5; group.add(spill); brakeGlows.push(spill);
       // 바닥·휠하우스·실내(어두운 속)
       box(D.nose - D.tail - 0.62, 0.12, 1.44, M.trim, (D.nose + D.tail) / 2, 0.23, 0);
       [D.axF, D.axR].forEach(function (ax) {
@@ -314,7 +327,10 @@
           if (w.userData.disc) w.userData.disc.material.emissiveIntensity = (s.heat || 0) * (w.userData.front ? 2.2 : 1.1);
         }
         if (!ghost) {
-          M.tail.emissiveIntensity = 0.45 + 2.6 * clamp((s.brake || 0) * 6, 0, 1);
+          var bk = clamp((s.brake || 0) * 6, 0, 1);
+          M.tail.emissiveIntensity = 0.45 + 2.6 * bk;
+          brakeLit += (bk - brakeLit) * (s.dt ? 1 - Math.exp(-22 * s.dt) : 1);
+          for (var b = 0; b < brakeGlows.length; b++) brakeGlows[b].material.opacity = brakeLit * brakeGlows[b].userData.k;
           steerWheel.rotation.z = -(s.steer || 0) * 13;
           if (s.flame) flameT = 0.16;
           flameT = Math.max(0, flameT - (s.dt || 0));

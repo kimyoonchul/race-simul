@@ -10,7 +10,7 @@
 
   var S, raw, spec, renderer, scene, camera, world, car, ghost, marker, gmarker, tvCams = [];
   var st = { t: 0, playing: true, rate: 1, cam: 'chase', ghost: true, line: true, sound: false, hud: true, car: 'z4' };
-  var cs = { yaw: 0, drag: 0, zoom: 1, oYaw: 0.9, oPitch: 0.32, oDist: 8.5, topH: 78, topYaw: 0, tv: -1, snap: true, dragging: false };
+  var cs = { yaw: 0, drag: 0, zoom: 1, oYaw: 0.9, oPitch: 0.32, oDist: 8.5, topH: 78, topYaw: 0, tv: -1, snap: true, dragging: false, lg: 0 };
   var cur = {}, gcur = {}, events = [], evPtr = 0, spin = 0, steer = 0, wall = 0, last = 0, prevGear = 0, prevThr = 0;
   var CAMS = ['chase', 'onboard', 'tv', 'top', 'orbit', 'map'];
 
@@ -141,17 +141,23 @@
   function updateCamera(dt, px, pz) {
     var h = cur.hd, fx = Math.cos(h), fz = -Math.sin(h), fov = 56, snap = cs.snap;
     camera.up.set(0, 1, 0);
+    // 가감속 반응: 가속하면 차가 앞으로 치고 나가고(카메라가 처짐), 감속하면 카메라가 차에 붙습니다
+    var lgT = clamp(cur.aLong, -1.1, 0.8);
+    cs.lg = snap ? lgT : cs.lg + (lgT - cs.lg) * (1 - Math.exp(-3.2 * dt));
     if (st.cam === 'chase') {
       cs.yaw = snap ? h : damp(cs.yaw, h, 4.2, dt);
       if (!cs.dragging) cs.drag *= Math.exp(-2.2 * dt);
-      var yaw = cs.yaw + cs.drag, back = (6.6 + cur.v * 0.022) * cs.zoom, ht = (2.1 + cur.v * 0.005) * cs.zoom;
+      var base = 6.6 + cur.v * 0.022, kd = 1 + cs.lg * 1.5 / base, dive = Math.min(0, cs.lg);
+      var yaw = cs.yaw + cs.drag, back = base * kd * cs.zoom, ht = (2.1 + cur.v * 0.005) * kd * cs.zoom;
       camera.position.set(px - Math.cos(yaw) * back, ht, pz + Math.sin(yaw) * back);
-      camera.lookAt(px + fx * 2.6, 0.95, pz + fz * 2.6);
-      fov = 55 + Math.min(21, cur.v * 0.37);
+      // 감속으로 카메라가 붙을 때 차가 계기판 뒤로 내려가지 않도록 시선을 차 쪽으로 당깁니다
+      camera.lookAt(px + fx * (2.6 + dive * 2.0), 0.78 + dive * 0.4, pz + fz * (2.6 + dive * 2.0));
+      fov = 55 + Math.min(21, cur.v * 0.37) + cs.lg * 4;
     } else if (st.cam === 'onboard') {
       var e = spec.eye, lx = -Math.sin(h), lz = -Math.cos(h), shake = cur.v * 0.00012;
-      camera.position.set(px + fx * e[0] + lx * e[2], e[1] + Math.sin(wall * 41) * shake, pz + fz * e[0] + lz * e[2]);
-      camera.lookAt(px + fx * 40 + lx * (e[2] + cur.aLat * 5), 0.9, pz + fz * 40 + lz * (e[2] + cur.aLat * 5));
+      var eyeX = e[0] - cs.lg * 0.05; // 감속하면 몸이 앞으로 쏠림
+      camera.position.set(px + fx * eyeX + lx * e[2], e[1] + Math.sin(wall * 41) * shake, pz + fz * eyeX + lz * e[2]);
+      camera.lookAt(px + fx * 40 + lx * (e[2] + cur.aLat * 5), 0.9 + cs.lg * 0.7, pz + fz * 40 + lz * (e[2] + cur.aLat * 5));
       camera.rotateZ(-cur.aLat * 0.035);
       fov = 68 + Math.min(10, cur.v * 0.16);
     } else if (st.cam === 'tv') {
@@ -221,7 +227,7 @@
     prevGear = cur.gear; prevThr += (cur.thr - prevThr) * (1 - Math.exp(-6 * dt));
     if (flame) Engine.pop();
     car.group.position.set(px, 0, pz); car.group.rotation.y = cur.hd;
-    car.set({ steer: steer, spin: spin, roll: cur.aLat * 0.045, pitch: cur.aLong * 0.028, brake: cur.brk, heat: clamp((cur.brakeT - 280) / 240, 0, 1), flame: flame, dt: dt });
+    car.set({ steer: steer, spin: spin, roll: cur.aLat * 0.045, pitch: cur.aLong * 0.04, brake: cur.brk, heat: clamp((cur.brakeT - 280) / 240, 0, 1), flame: flame, dt: dt });
     world.follow(px, 0, pz);
 
     // 고스트(베스트랩)
@@ -231,7 +237,7 @@
       if (tau <= bl.time) {
         sample(bl.t0 + tau, gcur);
         ghost.group.position.set(gcur.x, 0, -gcur.y); ghost.group.rotation.y = gcur.hd;
-        ghost.set({ steer: 0, spin: spin, roll: gcur.aLat * 0.045, pitch: gcur.aLong * 0.028 });
+        ghost.set({ steer: 0, spin: spin, roll: gcur.aLat * 0.045, pitch: gcur.aLong * 0.04 });
         gst = gcur;
       }
     }
