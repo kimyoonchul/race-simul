@@ -197,7 +197,7 @@
   // ── 프레임 ───────────────────────────────────────────────────────
   function tick(now) {
     requestAnimationFrame(tick);
-    frame(Math.min(0.1, (now - last) / 1000 || 0.016)); last = now;
+    frame(Math.min(0.25, (now - last) / 1000 || 0.016)); last = now; // 프레임이 낮아도 실제 시간대로 재생
   }
   function frame(dt) {
     wall += dt;
