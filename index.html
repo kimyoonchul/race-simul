@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Z4 M40i Track Replay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,500;0,600;1,600;1,700;1,800&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* 레이아웃: 화면 전체가 3D 뷰, 그 위에 계기판 HUD를 가장자리에 띄운 한 화면짜리 앱(어두운 콕핏 단일 테마) */
+:root {
+  color-scheme: dark;
+  --ink: #06080b;
+  --panel: rgba(8, 12, 18, 0.72);
+  --panel-solid: #0c1118;
+  --line: rgba(140, 175, 210, 0.2);
+  --fg: #eaf0f6;
+  --dim: #93a0b0;
+  --ice: #7fd0ff;
+  --blue: #2f7bff;
+  --red: #ff4136;
+  --amber: #ffb224;
+  --green: #36d98a;
+  --violet: #b98aff;
+  --accent: var(--ice);
+  --num: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --ui: "Noto Sans KR", "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --gutter-l: max(16px, env(safe-area-inset-left, 0px));
+  --gutter-r: max(16px, env(safe-area-inset-right, 0px));
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--ink); color: var(--fg); font-family: var(--ui); font-size: 13px; overflow: hidden; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--ice); outline-offset: 2px; }
+
+#app { position: relative; height: 100%; overflow: hidden; user-select: none; -webkit-user-select: none; touch-action: none; }
+#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 46%, transparent 52%, rgba(0, 0, 0, 0.5) 100%); opacity: 0.55; }
+#speedfx { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at 50% 50%, transparent 38%, rgba(190, 225, 255, 0.11) 70%, rgba(190, 225, 255, 0.22) 100%); mix-blend-mode: screen; }
+#tint { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 1.2s; background: linear-gradient(180deg, rgba(90, 190, 255, 0.16), transparent 30%, transparent 70%, rgba(90, 190, 255, 0.2)); }
+.mode-cool #tint { opacity: 1; }
+
+#hud { position: absolute; inset: 0; pointer-events: none; padding-left: var(--gutter-l); padding-right: var(--gutter-r); transition: opacity 0.25s; }
+#hud > * { pointer-events: auto; }
+.hud-off #hud { opacity: 0; }
+.hud-off #hud > * { pointer-events: none; }
+
+.label { font-family: var(--num); font-weight: 600; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+.est { font-family: var(--ui); font-size: 10px; letter-spacing: 0; color: var(--amber); border: 1px solid rgba(255, 178, 36, 0.45); border-radius: 3px; padding: 0 4px; margin-left: 6px; text-transform: none; white-space: nowrap; }
+.panel { background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+
+/* ── 상단 ── */
+#top { position: absolute; top: 0; left: var(--gutter-l); right: var(--gutter-r); display: flex; align-items: flex-start; gap: 14px; padding-top: 14px; flex-wrap: wrap; }
+.brand { margin-right: auto; }
+.model { font-family: var(--num); font-style: italic; font-weight: 800; font-size: 38px; line-height: 0.9; letter-spacing: 0.01em; text-shadow: 0 2px 14px rgba(0, 0, 0, 0.6); }
+.model b { color: var(--ice); font-weight: 800; }
+.venue { font-family: var(--num); font-weight: 600; letter-spacing: 0.16em; font-size: 13px; color: var(--fg); opacity: 0.86; margin-top: 5px; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8); }
+#lapkind { align-self: center; font-family: var(--num); font-style: italic; font-weight: 800; font-size: 20px; letter-spacing: 0.08em; padding: 3px 14px 3px 12px; color: var(--ink); background: var(--accent); clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%); transition: background 0.4s; }
+.seg { display: flex; }
+.seg button, .tog { font-family: var(--num); font-weight: 600; font-size: 14px; letter-spacing: 0.08em; padding: 7px 11px; background: var(--panel); border: 1px solid var(--line); color: var(--dim); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.seg button + button { border-left: 0; }
+.seg button[aria-pressed="true"], .tog[aria-pressed="true"] { color: var(--ink); background: var(--ice); border-color: var(--ice); }
+.seg button:hover, .tog:hover { color: var(--fg); }
+.seg button[aria-pressed="true"]:hover, .tog[aria-pressed="true"]:hover { color: var(--ink); }
+.toggles { display: flex; gap: 6px; }
+
+/* ── 미니맵 ── */
+#mapbox { position: absolute; left: var(--gutter-l); top: 96px; width: 164px; padding: 8px; }
+#minimap { display: block; width: 100%; height: auto; }
+#callout { margin-top: 6px; min-height: 34px; font-family: var(--num); font-size: 15px; letter-spacing: 0.04em; line-height: 1.15; }
+#callout b { font-style: italic; font-weight: 800; font-size: 19px; }
+#callout .up { color: var(--green); } #callout .down { color: var(--amber); } #callout .best { color: var(--violet); }
+
+/* ── 랩 목록 ── */
+#lapsbox { position: absolute; right: var(--gutter-r); top: 96px; width: 244px; display: flex; flex-direction: column; max-height: calc(100% - 96px - 318px); }
+#lapsbox header { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 10px 6px; border-bottom: 1px solid var(--line); }
+#lapsbox header strong { font-family: var(--num); font-style: italic; font-weight: 800; font-size: 18px; letter-spacing: 0.06em; }
+#laplist { overflow-y: auto; scrollbar-width: thin; padding: 2px 0; }
+.lap { display: grid; grid-template-columns: 26px 62px 1fr 46px; align-items: center; gap: 6px; width: 100%; padding: 3px 10px; text-align: left; font-family: var(--num); font-size: 16px; font-variant-numeric: tabular-nums; border-left: 3px solid transparent; }
+.lap:hover { background: rgba(127, 208, 255, 0.1); }
+.lap .n { color: var(--dim); font-weight: 600; }
+.lap .tm { font-weight: 600; letter-spacing: 0.02em; }
+.lap .bar { height: 6px; background: rgba(255, 255, 255, 0.08); position: relative; }
+.lap .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--dim); }
+.lap .gap { text-align: right; color: var(--dim); font-size: 14px; }
+.lap.push .bar i { background: var(--red); } .lap.cool .bar i { background: var(--ice); } .lap.warm .bar i { background: var(--amber); }
+.lap.best .tm, .lap.best .gap { color: var(--violet); } .lap.best .bar i { background: var(--violet); }
+.lap.now { border-left-color: var(--fg); background: rgba(255, 255, 255, 0.08); }
+#lapsbox footer { padding: 6px 10px 8px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; font-family: var(--num); font-size: 14px; color: var(--dim); letter-spacing: 0.04em; }
+#lapsbox footer b { color: var(--fg); font-weight: 600; }
+
+/* ── 배너 ── */
+#banner { position: absolute; left: 50%; top: 19%; transform: translateX(-50%); width: min(680px, calc(100% - 32px)); pointer-events: none; opacity: 0; }
+#banner.show { animation: bannerIn 0.45s cubic-bezier(0.2, 0.9, 0.2, 1) forwards; }
+#banner.hide { animation: bannerOut 0.4s ease-in forwards; }
+@keyframes bannerIn { from { opacity: 0; transform: translateX(-50%) scaleY(0.2) skewX(-8deg); } to { opacity: 1; transform: translateX(-50%) scaleY(1) skewX(0); } }
+@keyframes bannerOut { from { opacity: 1; } to { opacity: 0; transform: translateX(-46%); } }
+.bn { --c: var(--fg); background: linear-gradient(90deg, rgba(6, 9, 13, 0.2), rgba(6, 9, 13, 0.86) 18%, rgba(6, 9, 13, 0.86) 82%, rgba(6, 9, 13, 0.2)); padding: 12px 26px 14px; position: relative; display: grid; grid-template-columns: 1fr auto; column-gap: 20px; align-items: center; }
+.bn::before, .bn::after { content: ""; position: absolute; left: 0; right: 0; height: 5px; background: repeating-linear-gradient(-55deg, var(--c) 0 12px, transparent 12px 22px); animation: stripes 0.7s linear infinite; }
+.bn::before { top: 0; } .bn::after { bottom: 0; animation-direction: reverse; }
+@keyframes stripes { to { background-position: 26.8px 0; } }
+.bn .k { font-family: var(--num); font-weight: 600; letter-spacing: 0.2em; font-size: 13px; color: var(--c); }
+.bn .t { font-family: var(--ui); font-weight: 700; font-size: 17px; margin-top: 2px; }
+.bn .s { font-size: 12px; color: var(--dim); margin-top: 2px; }
+.bn .big { font-family: var(--num); font-style: italic; font-weight: 800; font-size: 64px; line-height: 0.95; color: var(--c); letter-spacing: 0.01em; font-variant-numeric: tabular-nums; text-shadow: 0 0 26px color-mix(in srgb, var(--c) 45%, transparent); white-space: nowrap; }
+.bn.best { --c: var(--violet); } .bn.cool { --c: var(--ice); } .bn.push { --c: var(--red); } .bn.top { --c: var(--amber); } .bn.up { --c: var(--green); }
+
+/* ── 하단 독 ── */
+#dock { position: absolute; left: 0; right: 0; bottom: 0; padding: 40px var(--gutter-r) max(10px, env(safe-area-inset-bottom, 0px)) var(--gutter-l); background: linear-gradient(180deg, transparent, rgba(4, 6, 9, 0.72) 34%, rgba(4, 6, 9, 0.92)); pointer-events: none; }
+#dock > * { pointer-events: auto; }
+#cluster { display: flex; justify-content: center; align-items: flex-end; gap: 22px; }
+.blk { position: relative; }
+.blk > .label { display: flex; align-items: center; justify-content: center; margin-top: 2px; }
+
+#tach { width: 190px; }
+#tach svg { display: block; width: 100%; height: auto; overflow: visible; }
+#tach .trk { fill: none; stroke: rgba(255, 255, 255, 0.12); stroke-width: 12; }
+#tach .red { fill: none; stroke: rgba(255, 65, 54, 0.6); stroke-width: 12; }
+#tach .val { fill: none; stroke: var(--accent); stroke-width: 12; transition: stroke 0.3s; }
+#tach .val.hot { stroke: var(--red); }
+#tach text { fill: var(--dim); font-family: var(--num); font-weight: 600; font-size: 15px; text-anchor: middle; dominant-baseline: middle; }
+#gear { position: absolute; left: 0; right: 0; top: 44px; text-align: center; font-family: var(--num); font-style: italic; font-weight: 800; font-size: 78px; line-height: 1; }
+#rpmnum { position: absolute; left: 0; right: 0; top: 122px; text-align: center; font-family: var(--num); font-weight: 600; font-size: 17px; color: var(--dim); font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
+
+#main { min-width: 300px; text-align: center; }
+#shift { display: flex; justify-content: center; gap: 5px; margin-bottom: 4px; }
+#shift i { width: 15px; height: 8px; background: rgba(255, 255, 255, 0.1); transform: skewX(-18deg); }
+#shift i.g { background: var(--green); box-shadow: 0 0 9px var(--green); }
+#shift i.y { background: var(--amber); box-shadow: 0 0 9px var(--amber); }
+#shift i.r { background: var(--red); box-shadow: 0 0 10px var(--red); }
+#shift.flash i { background: var(--ice); box-shadow: 0 0 14px var(--ice); }
+#speed { font-family: var(--num); font-style: italic; font-weight: 800; font-size: 118px; line-height: 0.84; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; text-shadow: 0 4px 30px rgba(0, 0, 0, 0.55); }
+#speed small { font-size: 20px; font-weight: 600; font-style: normal; letter-spacing: 0.1em; color: var(--dim); margin-left: 6px; }
+#lapline { display: flex; justify-content: center; align-items: baseline; gap: 12px; margin-top: 8px; font-family: var(--num); font-variant-numeric: tabular-nums; }
+#lapno { font-weight: 600; font-size: 16px; letter-spacing: 0.1em; color: var(--dim); }
+#laptime { font-style: italic; font-weight: 700; font-size: 40px; line-height: 1; }
+#delta { font-weight: 700; font-style: italic; font-size: 24px; min-width: 70px; text-align: left; }
+#delta.neg { color: var(--green); } #delta.pos { color: var(--red); }
+#sectors { display: flex; justify-content: center; gap: 6px; margin-top: 6px; }
+#sectors span { font-family: var(--num); font-weight: 600; font-size: 14px; letter-spacing: 0.05em; padding: 1px 9px; min-width: 62px; border: 1px solid var(--line); color: var(--dim); font-variant-numeric: tabular-nums; }
+#sectors span.best { background: var(--violet); border-color: var(--violet); color: var(--ink); }
+#sectors span.up { background: var(--green); border-color: var(--green); color: var(--ink); }
+#sectors span.down { background: var(--amber); border-color: var(--amber); color: var(--ink); }
+#sectors span.live { border-color: var(--fg); color: var(--fg); }
+
+#pedals { display: flex; gap: 10px; align-items: flex-end; }
+.bar-v { width: 18px; height: 112px; background: rgba(255, 255, 255, 0.08); position: relative; border: 1px solid var(--line); }
+.bar-v i { position: absolute; left: 0; right: 0; bottom: 0; height: 0; }
+#thr i { background: linear-gradient(180deg, #7dffb9, var(--green)); } #brk i { background: linear-gradient(180deg, #ff8a80, var(--red)); }
+#btemp i { background: linear-gradient(180deg, #ffd27a, #ff5a14); }
+.cap { font-family: var(--num); font-weight: 600; font-size: 11px; letter-spacing: 0.1em; color: var(--dim); text-align: center; margin-top: 3px; }
+#btnum { font-family: var(--num); font-weight: 600; font-size: 13px; text-align: center; font-variant-numeric: tabular-nums; }
+
+#ggb canvas { display: block; width: 150px; height: 150px; }
+#ggnum { font-family: var(--num); font-size: 14px; text-align: center; font-variant-numeric: tabular-nums; color: var(--fg); letter-spacing: 0.04em; }
+#loads { width: 118px; }
+#loadgrid { position: relative; height: 150px; }
+#loadgrid .car { position: absolute; left: 39px; right: 39px; top: 14px; bottom: 14px; border: 1.5px solid rgba(255, 255, 255, 0.28); border-radius: 14px 14px 10px 10px / 30px 30px 12px 12px; }
+#loadgrid .car::after { content: ""; position: absolute; left: 5px; right: 5px; top: 50px; height: 34px; border: 1.5px solid rgba(255, 255, 255, 0.2); border-radius: 6px; }
+.tyre { position: absolute; width: 26px; height: 52px; background: rgba(255, 255, 255, 0.08); border: 1px solid var(--line); overflow: hidden; }
+.tyre i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--ice); }
+.tyre b { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); text-align: center; font-family: var(--num); font-weight: 600; font-size: 13px; text-shadow: 0 0 4px #000; font-variant-numeric: tabular-nums; }
+#tFL { left: 4px; top: 12px; } #tFR { right: 4px; top: 12px; } #tRL { left: 4px; bottom: 12px; } #tRR { right: 4px; bottom: 12px; }
+
+#trace { display: block; width: 100%; height: 58px; margin-top: 10px; }
+#transport { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+#play { width: 40px; height: 34px; background: var(--ice); color: var(--ink); clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); display: grid; place-items: center; flex: none; }
+#play svg { width: 16px; height: 16px; fill: currentColor; }
+#rate { flex: none; }
+#timeline { flex: 1; min-width: 0; height: 34px; display: block; cursor: pointer; }
+#clock { font-family: var(--num); font-weight: 600; font-size: 16px; font-variant-numeric: tabular-nums; color: var(--dim); white-space: nowrap; flex: none; }
+#clock b { color: var(--fg); font-weight: 600; }
+
+/* ── 리포트·도움말 ── */
+.sheet { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(3, 5, 8, 0.72); padding: 16px var(--gutter-r) 16px var(--gutter-l); z-index: 20; overflow: auto; }
+.sheet > div { width: min(860px, 100%); background: var(--panel-solid); border: 1px solid var(--line); padding: 22px 26px 24px; position: relative; }
+.sheet h2 { margin: 0 0 2px; font-family: var(--num); font-style: italic; font-weight: 800; font-size: 34px; letter-spacing: 0.02em; text-wrap: balance; }
+.sheet h3 { margin: 18px 0 6px; font-family: var(--num); font-weight: 600; font-size: 14px; letter-spacing: 0.16em; color: var(--ice); }
+.sheet p, .sheet li { color: #c6d0dc; line-height: 1.6; margin: 4px 0; }
+.sheet ul { margin: 0; padding-left: 18px; }
+.sheet .x { position: absolute; right: 14px; top: 12px; font-family: var(--num); font-size: 15px; letter-spacing: 0.1em; color: var(--dim); border: 1px solid var(--line); padding: 4px 10px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 18px; margin-top: 12px; }
+.stat .v { font-family: var(--num); font-style: italic; font-weight: 800; font-size: 34px; line-height: 1; font-variant-numeric: tabular-nums; }
+.stat .v small { font-size: 15px; font-style: normal; font-weight: 600; color: var(--dim); margin-left: 3px; }
+.stat .l { font-size: 12px; color: var(--dim); margin-top: 3px; }
+.tblwrap { overflow-x: auto; }
+table.ct { border-collapse: collapse; width: 100%; font-family: var(--num); font-size: 15px; font-variant-numeric: tabular-nums; }
+table.ct th { text-align: right; font-weight: 600; color: var(--dim); letter-spacing: 0.08em; font-size: 12px; padding: 3px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+table.ct td { text-align: right; padding: 2px 8px; border-bottom: 1px solid rgba(140, 175, 210, 0.08); white-space: nowrap; }
+table.ct th:first-child, table.ct td:first-child { text-align: left; }
+kbd { font-family: var(--num); font-size: 13px; border: 1px solid var(--line); padding: 0 6px; margin-right: 2px; color: var(--fg); }
+#loading { position: absolute; inset: 0; display: grid; place-items: center; background: var(--ink); z-index: 30; font-family: var(--num); font-style: italic; font-weight: 800; font-size: 26px; letter-spacing: 0.1em; color: var(--ice); transition: opacity 0.5s; }
+#loading.done { opacity: 0; pointer-events: none; }
+
+/* ── 좁은 화면 ── */
+@media (max-width: 1180px) { #loads { display: none; } }
+@media (max-width: 1020px) { #lapsbox { width: 204px; } .lap { grid-template-columns: 22px 58px 1fr; } .lap .gap { display: none; } }
+@media (max-width: 900px) {
+  #ggb { display: none; } #cluster { gap: 14px; } #speed { font-size: 92px; }
+  #lapsbox { display: none; } .model { font-size: 30px; } #mapbox { width: 120px; top: 110px; }
+}
+@media (max-width: 640px) {
+  #tach { width: 128px; } #gear { font-size: 54px; top: 28px; } #rpmnum { top: 82px; font-size: 14px; } #tach text { display: none; }
+  #main { min-width: 0; } #speed { font-size: 74px; } #speed small { font-size: 14px; } #laptime { font-size: 28px; } #delta { font-size: 18px; min-width: 52px; } #lapno { display: none; }
+  #pedals .bar-v { height: 78px; width: 13px; } #pedals { gap: 6px; } #btwrap { display: none; }
+  #sectors span { min-width: 46px; padding: 1px 5px; font-size: 12px; } #shift i { width: 9px; }
+  #trace { display: none; } #mapbox { width: 92px; padding: 5px; top: 118px; } #callout { font-size: 12px; } #callout b { font-size: 15px; }
+  .seg button, .tog { padding: 6px 8px; font-size: 13px; } #top { gap: 8px; } .bn .big { font-size: 40px; } .bn { padding: 10px 14px 12px; column-gap: 10px; } .bn .t { font-size: 14px; }
+  #rate button:not([aria-pressed="true"]) { display: none; } .venue { font-size: 11px; letter-spacing: 0.1em; }
+  #cluster { gap: 10px; } .est { display: none; } #tach > .label, #pedals + .label { font-size: 10px; }
+}
+@media (max-height: 560px) { #mapbox { display: none; } #lapsbox { display: none; } #trace { display: none; } #speed { font-size: 70px; } #tach { width: 130px; } #gear { font-size: 52px; top: 28px; } #rpmnum { top: 82px; } }
+@media (prefers-reduced-motion: reduce) { .bn::before, .bn::after { animation: none; } #banner.show, #banner.hide { animation-duration: 0.01s; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="gl" aria-label="주행 리플레이 3D 뷰"></canvas>
+  <div id="vignette"></div><div id="speedfx"></div><div id="tint"></div>
+
+  <div id="hud">
+    <div id="top">
+      <div class="brand">
+        <div class="model">Z4 <b>M40i</b></div>
+        <div class="venue"><span id="venue">BMW DRIVING CENTER</span> · <span id="date"></span></div>
+      </div>
+      <div id="lapkind">PUSH</div>
+      <div class="seg" id="cams" role="group" aria-label="카메라">
+        <button data-cam="chase" aria-pressed="true">추적</button><button data-cam="onboard" aria-pressed="false">온보드</button><button data-cam="tv" aria-pressed="false">중계</button><button data-cam="top" aria-pressed="false">탑뷰</button><button data-cam="orbit" aria-pressed="false">궤도</button><button data-cam="map" aria-pressed="false">전체</button>
+      </div>
+      <div class="toggles">
+        <button class="tog" id="tGhost" aria-pressed="true" title="베스트랩 고스트카 (G)">고스트</button>
+        <button class="tog" id="tLine" aria-pressed="true" title="레이싱 라인 (L)">라인</button>
+        <button class="tog" id="tSound" aria-pressed="false" title="엔진 사운드 (M)">사운드</button>
+        <button class="tog" id="tReport" aria-pressed="false" title="세션 리포트 (R)">리포트</button>
+        <button class="tog" id="tHelp" aria-pressed="false" title="도움말 (?)">?</button>
+      </div>
+    </div>
+
+    <div id="mapbox" class="panel">
+      <canvas id="minimap" width="296" height="560"></canvas>
+      <div id="callout"></div>
+    </div>
+
+    <div id="lapsbox" class="panel">
+      <header><strong>LAPS</strong><span class="label" id="lapsum"></span></header>
+      <div id="laplist"></div>
+      <footer><span>이론 베스트 <b id="theo"></b></span><span>편차 <b id="cons"></b></span></footer>
+    </div>
+
+    <div id="banner"></div>
+
+    <div id="dock">
+      <div id="cluster">
+        <div class="blk" id="tach">
+          <svg viewBox="0 0 200 172" aria-hidden="true">
+            <path class="trk" id="tTrk"/><path class="red" id="tRed"/><path class="val" id="tVal"/>
+            <g id="tNums"></g>
+          </svg>
+          <div id="gear">N</div><div id="rpmnum">0</div>
+          <div class="label">RPM · GEAR<span class="est">추정</span></div>
+        </div>
+
+        <div class="blk" id="main">
+          <div id="shift"></div>
+          <div id="speed"><span id="spd">0</span><small>km/h</small></div>
+          <div id="lapline"><span id="lapno">OUT LAP</span><span id="laptime">0:00.0</span><span id="delta"></span></div>
+          <div id="sectors"><span id="sec0">S1</span><span id="sec1">S2</span><span id="sec2">S3</span></div>
+        </div>
+
+        <div class="blk">
+          <div id="pedals">
+            <div><div class="bar-v" id="thr"><i></i></div><div class="cap">THR</div></div>
+            <div><div class="bar-v" id="brk"><i></i></div><div class="cap">BRK</div></div>
+            <div id="btwrap"><div id="btnum">60°</div><div class="bar-v" id="btemp" style="height:92px"><i></i></div><div class="cap">DISC</div></div>
+          </div>
+          <div class="label">페달 · 디스크<span class="est">추정</span></div>
+        </div>
+
+        <div class="blk" id="ggb">
+          <canvas id="gg" width="300" height="300"></canvas>
+          <div id="ggnum">0.00 G</div>
+          <div class="label">G-G<span class="est">추정</span></div>
+        </div>
+
+        <div class="blk" id="loads">
+          <div id="loadgrid">
+            <div class="car"></div>
+            <div class="tyre" id="tFL"><i></i><b></b></div><div class="tyre" id="tFR"><i></i><b></b></div>
+            <div class="tyre" id="tRL"><i></i><b></b></div><div class="tyre" id="tRR"><i></i><b></b></div>
+          </div>
+          <div class="cap" style="margin-top:0">&nbsp;</div>
+          <div class="label">하중 이동 %<span class="est">추정</span></div>
+        </div>
+      </div>
+
+      <canvas id="trace" width="1600" height="116" aria-label="현재 랩과 베스트랩 속도 비교"></canvas>
+      <div id="transport">
+        <button id="play" aria-label="재생/일시정지"><svg viewBox="0 0 16 16"><path id="playIcon" d="M3 1l11 7-11 7z"/></svg></button>
+        <div class="seg" id="rate" role="group" aria-label="재생 속도">
+          <button data-rate="0.25" aria-pressed="false">¼×</button><button data-rate="1" aria-pressed="true">1×</button><button data-rate="2" aria-pressed="false">2×</button><button data-rate="4" aria-pressed="false">4×</button>
+        </div>
+        <canvas id="timeline" width="1600" height="68" aria-label="세션 타임라인"></canvas>
+        <div id="clock"><b id="tnow">0:00</b> / <span id="ttot">0:00</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet" id="report" hidden><div><button class="x" data-close>닫기</button><div id="reportBody"></div></div></div>
+  <div class="sheet" id="help" hidden><div><button class="x" data-close>닫기</button>
+    <h2>조작과 데이터 안내</h2>
+    <h3>단축키</h3>
+    <p><kbd>Space</kbd> 재생/정지 · <kbd>←</kbd><kbd>→</kbd> 5초 이동 · <kbd>[</kbd><kbd>]</kbd> 이전/다음 랩 · <kbd>B</kbd> 베스트랩으로 · <kbd>1</kbd>–<kbd>6</kbd> 카메라 · <kbd>C</kbd> 카메라 전환 · <kbd>G</kbd> 고스트 · <kbd>L</kbd> 라인 · <kbd>M</kbd> 사운드 · <kbd>H</kbd> HUD 숨김 · <kbd>R</kbd> 리포트</p>
+    <p>궤도·추적·탑뷰에서는 드래그로 시점 회전, 휠(핀치)로 거리 조절. 타임라인과 랩 목록을 눌러 이동합니다.</p>
+    <h3>실측 값</h3>
+    <ul><li>시간, GPS 위치, GPS 속도 (RaceChrono, 폰 내장 GPS 1Hz). 랩타임은 스타트/피니시 통과 시각으로 계산했습니다.</li></ul>
+    <h3>추정 값 <span class="est">추정</span></h3>
+    <ul>
+      <li>RPM·기어: 속도와 8단 자동변속기 기어비·타이어 규격으로 역산. 변속 시점은 스포츠 모드 가정입니다.</li>
+      <li>스로틀·브레이크·G: 속도 변화와 주행선 곡률에서 계산. 1Hz GPS 한계로 횡G는 마찰원(약 1.2g) 안으로 보정했습니다.</li>
+      <li>하중 이동·디스크 온도: 무게중심 높이와 제동 에너지로 만든 단순 물리 모델입니다.</li>
+      <li>섹터·코너 번호(C1…)는 GPS 주행선에서 자동 검출한 것이라 공식 코너 번호와 다릅니다.</li>
+    </ul>
+    <h3>보정</h3>
+    <ul><li>트랙 모양은 빠른 랩들의 GPS 궤적을 겹쳐 만든 주행선이며 폭은 표시용입니다. GPS 속도가 순간적으로 끊긴 구간(<span id="repairN"></span>초)은 위치 기록으로 메웠습니다.</li></ul>
+  </div></div>
+  <div id="loading">LOADING SESSION…</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="data/session.js"></script>
+<script src="js/telemetry.js"></script>
+<script src="js/car.js"></script>
+<script src="js/world.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
