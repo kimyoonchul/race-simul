@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="claude:viewport-fit-sides" content="cover">
-<title>Z4 M40i Track Replay</title>
+<title>Race Simul</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,500;0,600;1,600;1,700;1,800&family=Noto+Sans+KR:wght@400;500;700&display=swap">
 <style>
@@ -66,8 +66,11 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--ice); 
 .seg button[aria-pressed="true"]:hover, .tog[aria-pressed="true"]:hover { color: var(--ink); }
 .toggles { display: flex; gap: 6px; }
 
+#cars { margin-top: 8px; }
+#cars button { padding: 4px 9px; font-size: 13px; }
+
 /* ── 미니맵 ── */
-#mapbox { position: absolute; left: var(--gutter-l); top: 96px; width: 164px; padding: 8px; }
+#mapbox { position: absolute; left: var(--gutter-l); top: 128px; width: 164px; padding: 8px; }
 #minimap { display: block; width: 100%; height: auto; }
 #callout { margin-top: 6px; min-height: 34px; font-family: var(--num); font-size: 15px; letter-spacing: 0.04em; line-height: 1.15; }
 #callout b { font-style: italic; font-weight: 800; font-size: 19px; }
@@ -173,6 +176,55 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--ice); 
 #clock { font-family: var(--num); font-weight: 600; font-size: 16px; font-variant-numeric: tabular-nums; color: var(--dim); white-space: nowrap; flex: none; }
 #clock b { color: var(--fg); font-weight: 600; }
 
+/* ── 차량별 계기판 ── */
+#speedo, #spdIn, #tiles, #tNeedle, #tGlow { display: none; }
+#speedo { width: 190px; }
+#speedo svg { display: block; width: 100%; height: auto; overflow: visible; }
+#speedo .trk { fill: none; stroke: rgba(255, 255, 255, 0.12); stroke-width: 12; }
+#speedo .val { fill: none; stroke: var(--ice); stroke-width: 12; }
+#speedo text { fill: var(--dim); font-family: var(--num); font-weight: 600; font-size: 14px; text-anchor: middle; dominant-baseline: middle; }
+#spd2 { position: absolute; left: 0; right: 0; top: 50px; text-align: center; font-family: var(--num); font-style: italic; font-weight: 800; font-size: 70px; line-height: 1; font-variant-numeric: tabular-nums; }
+#spd2u { position: absolute; left: 0; right: 0; top: 122px; text-align: center; font-family: var(--num); font-weight: 600; font-size: 15px; letter-spacing: 0.1em; color: var(--dim); }
+.tile { border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); padding: 5px 12px 6px; min-width: 122px; text-align: left; }
+.tile .tv { font-family: var(--num); font-style: italic; font-weight: 800; font-size: 34px; line-height: 1; font-variant-numeric: tabular-nums; }
+.tile .tv small { font-size: 14px; font-style: normal; font-weight: 600; color: var(--dim); margin-left: 4px; }
+
+/* M340i Touring: 좌 속도계 · 우 회전계가 마주 보는 날개형, 가운데는 랩타임 */
+[data-cluster="m340i"] { --ice: #5aa9ff; }
+[data-cluster="m340i"] #speedo { display: block; order: 1; }
+[data-cluster="m340i"] #main { order: 2; }
+[data-cluster="m340i"] #tach { order: 3; }
+[data-cluster="m340i"] #pedalblk { order: 4; }
+[data-cluster="m340i"] #ggb { order: 5; }
+[data-cluster="m340i"] #loads { order: 6; }
+[data-cluster="m340i"] #speed { display: none; }
+[data-cluster="m340i"] #lapline { flex-direction: column; align-items: center; gap: 0; margin-top: 10px; }
+[data-cluster="m340i"] #laptime { font-size: 76px; font-weight: 800; }
+[data-cluster="m340i"] #delta { text-align: center; font-size: 28px; }
+[data-cluster="m340i"] #shift i { transform: none; width: 18px; height: 6px; border-radius: 3px; }
+[data-cluster="m340i"] #tach .val, [data-cluster="m340i"] #speedo .val { stroke-linecap: round; }
+
+/* Stinger: 큰 원형 회전계 안에 속도, 가운데 타일, AWD 하중을 전면에 */
+[data-cluster="stinger"] { --ice: #37e6a5; }
+[data-cluster="stinger"] #tach { width: 236px; }
+[data-cluster="stinger"] #tNeedle { display: block; stroke: #ff5148; stroke-width: 4; stroke-linecap: round; transform-origin: 100px 104px; filter: drop-shadow(0 0 4px #ff5148); }
+[data-cluster="stinger"] #tGlow { display: block; fill: rgba(255, 60, 50, 0.12); }
+[data-cluster="stinger"] #tach .val { stroke-width: 5; stroke: var(--ice); }
+[data-cluster="stinger"] #tach .trk, [data-cluster="stinger"] #tach .red { stroke-width: 5; }
+[data-cluster="stinger"] #spdIn { display: block; position: absolute; left: 0; right: 0; top: 56px; text-align: center; font-family: var(--num); font-style: italic; font-weight: 800; font-size: 82px; line-height: 1; font-variant-numeric: tabular-nums; text-shadow: 0 0 22px rgba(255, 80, 70, 0.45); }
+[data-cluster="stinger"] #gear { top: 153px; font-size: 30px; left: 50%; right: auto; transform: translateX(-50%); padding: 0 12px; border: 1px solid var(--ice); color: var(--ice); background: rgba(6, 9, 13, 0.7); }
+[data-cluster="stinger"] #rpmnum { top: 131px; font-size: 14px; }
+[data-cluster="stinger"] #lapline { margin-top: 26px; }
+[data-cluster="stinger"] #speed { display: none; }
+[data-cluster="stinger"] #tiles { display: flex; gap: 8px; justify-content: center; margin-top: 8px; }
+[data-cluster="stinger"] #laptime { font-size: 58px; font-weight: 800; }
+[data-cluster="stinger"] #loads { order: 3; display: block; }
+[data-cluster="stinger"] #pedalblk { order: 4; }
+[data-cluster="stinger"] #ggb { order: 5; }
+
+#drop { position: absolute; inset: 0; z-index: 25; display: grid; place-items: center; background: rgba(5, 8, 12, 0.78); border: 3px dashed var(--ice); font-family: var(--ui); font-weight: 700; font-size: 22px; text-align: center; pointer-events: none; }
+#drop small { display: block; font-weight: 400; font-size: 13px; color: var(--dim); margin-top: 8px; }
+
 /* ── 리포트·도움말 ── */
 .sheet { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(3, 5, 8, 0.72); padding: 16px var(--gutter-r) 16px var(--gutter-l); z-index: 20; overflow: auto; }
 .sheet > div { width: min(860px, 100%); background: var(--panel-solid); border: 1px solid var(--line); padding: 22px 26px 24px; position: relative; }
@@ -195,18 +247,24 @@ kbd { font-family: var(--num); font-size: 13px; border: 1px solid var(--line); p
 #loading.done { opacity: 0; pointer-events: none; }
 
 /* ── 좁은 화면 ── */
-@media (max-width: 1180px) { #loads { display: none; } }
+@media (max-width: 1180px) { #loads { display: none; } [data-cluster="stinger"] #ggb, [data-cluster="m340i"] #ggb { display: none; } }
 @media (max-width: 1020px) { #lapsbox { width: 204px; } .lap { grid-template-columns: 22px 58px 1fr; } .lap .gap { display: none; } }
 @media (max-width: 900px) {
   #ggb { display: none; } #cluster { gap: 14px; } #speed { font-size: 92px; }
-  #lapsbox { display: none; } .model { font-size: 30px; } #mapbox { width: 120px; top: 110px; }
+  #lapsbox { display: none; } .model { font-size: 30px; } #mapbox { width: 120px; top: 150px; }
+  [data-cluster="stinger"] #loads, [data-cluster="stinger"] #tiles { display: none; } [data-cluster="stinger"] #tach { width: 190px; } [data-cluster="stinger"] #spdIn { font-size: 62px; top: 50px; } [data-cluster="stinger"] #gear { top: 118px; font-size: 24px; } [data-cluster="stinger"] #rpmnum { display: none; }
+  [data-cluster="m340i"] #laptime { font-size: 48px; } #speedo { width: 150px; } #spd2 { font-size: 54px; top: 38px; } #spd2u { top: 94px; }
 }
 @media (max-width: 640px) {
   #tach { width: 128px; } #gear { font-size: 54px; top: 28px; } #rpmnum { top: 82px; font-size: 14px; } #tach text { display: none; }
   #main { min-width: 0; } #speed { font-size: 74px; } #speed small { font-size: 14px; } #laptime { font-size: 28px; } #delta { font-size: 18px; min-width: 52px; } #lapno { display: none; }
   #pedals .bar-v { height: 78px; width: 13px; } #pedals { gap: 6px; } #btwrap { display: none; }
   #sectors span { min-width: 46px; padding: 1px 5px; font-size: 12px; } #shift i { width: 9px; }
-  #trace { display: none; } #mapbox { width: 92px; padding: 5px; top: 118px; } #callout { font-size: 12px; } #callout b { font-size: 15px; }
+  #trace { display: none; } #mapbox { width: 92px; padding: 5px; top: 168px; }
+  #speedo { width: 112px; } #spd2 { font-size: 40px; top: 26px; } #spd2u { display: none; } #speedo text { display: none; } [data-cluster="m340i"] #laptime { font-size: 30px; } [data-cluster="m340i"] #pedalblk { display: none; }
+  [data-cluster="stinger"] #tach { width: 150px; } [data-cluster="stinger"] #spdIn { font-size: 48px; top: 38px; } [data-cluster="stinger"] #gear { top: 92px; font-size: 20px; } [data-cluster="stinger"] #laptime { font-size: 30px; }
+  #cars button { padding: 3px 6px; font-size: 12px; }
+  #banner { top: 46%; } #pedalblk > .label, #tach > .label, #speedo > .label { display: none; } #callout { font-size: 12px; } #callout b { font-size: 15px; }
   .seg button, .tog { padding: 6px 8px; font-size: 13px; } #top { gap: 8px; } .bn .big { font-size: 40px; } .bn { padding: 10px 14px 12px; column-gap: 10px; } .bn .t { font-size: 14px; }
   #rate button:not([aria-pressed="true"]) { display: none; } .venue { font-size: 11px; letter-spacing: 0.1em; }
   #cluster { gap: 10px; } .est { display: none; } #tach > .label, #pedals + .label { font-size: 10px; }
@@ -223,8 +281,11 @@ kbd { font-family: var(--num); font-size: 13px; border: 1px solid var(--line); p
   <div id="hud">
     <div id="top">
       <div class="brand">
-        <div class="model">Z4 <b>M40i</b></div>
+        <div class="model" id="model">Z4 <b>M40i</b></div>
         <div class="venue"><span id="venue">BMW DRIVING CENTER</span> · <span id="date"></span></div>
+        <div class="seg" id="cars" role="group" aria-label="차량 선택">
+          <button data-car="z4" aria-pressed="true">Z4 M40i</button><button data-car="m340i" aria-pressed="false">M340i Touring</button><button data-car="stinger" aria-pressed="false">Stinger 3.3T</button>
+        </div>
       </div>
       <div id="lapkind">PUSH</div>
       <div class="seg" id="cams" role="group" aria-label="카메라">
@@ -234,6 +295,7 @@ kbd { font-family: var(--num); font-size: 13px; border: 1px solid var(--line); p
         <button class="tog" id="tGhost" aria-pressed="true" title="베스트랩 고스트카 (G)">고스트</button>
         <button class="tog" id="tLine" aria-pressed="true" title="레이싱 라인 (L)">라인</button>
         <button class="tog" id="tSound" aria-pressed="false" title="엔진 사운드 (M)">사운드</button>
+        <button class="tog" id="tFile" aria-pressed="false" title="내 주행 파일 열기 (VBO · CSV)">파일</button>
         <button class="tog" id="tReport" aria-pressed="false" title="세션 리포트 (R)">리포트</button>
         <button class="tog" id="tHelp" aria-pressed="false" title="도움말 (?)">?</button>
       </div>
@@ -254,11 +316,20 @@ kbd { font-family: var(--num); font-size: 13px; border: 1px solid var(--line); p
 
     <div id="dock">
       <div id="cluster">
+        <div class="blk" id="speedo">
+          <svg viewBox="0 0 200 172" aria-hidden="true"><path class="trk" id="sTrk"/><path class="val" id="sVal"/><g id="sNums"></g></svg>
+          <div id="spd2">0</div><div id="spd2u">km/h</div>
+          <div class="label">SPEED</div>
+        </div>
+
         <div class="blk" id="tach">
           <svg viewBox="0 0 200 172" aria-hidden="true">
+            <circle id="tGlow" cx="100" cy="104" r="70"/>
             <path class="trk" id="tTrk"/><path class="red" id="tRed"/><path class="val" id="tVal"/>
             <g id="tNums"></g>
+            <line id="tNeedle" x1="100" y1="104" x2="100" y2="30"/>
           </svg>
+          <div id="spdIn">0</div>
           <div id="gear">N</div><div id="rpmnum">0</div>
           <div class="label">RPM · GEAR<span class="est">추정</span></div>
         </div>
@@ -268,9 +339,13 @@ kbd { font-family: var(--num); font-size: 13px; border: 1px solid var(--line); p
           <div id="speed"><span id="spd">0</span><small>km/h</small></div>
           <div id="lapline"><span id="lapno">OUT LAP</span><span id="laptime">0:00.0</span><span id="delta"></span></div>
           <div id="sectors"><span id="sec0">S1</span><span id="sec1">S2</span><span id="sec2">S3</span></div>
+          <div id="tiles">
+            <div class="tile"><div class="label">부스트<span class="est">추정</span></div><div class="tv"><span id="boost">0.00</span><small>bar</small></div></div>
+            <div class="tile"><div class="label">엔진 토크<span class="est">추정</span></div><div class="tv"><span id="torque">0</span><small>Nm</small></div></div>
+          </div>
         </div>
 
-        <div class="blk">
+        <div class="blk" id="pedalblk">
           <div id="pedals">
             <div><div class="bar-v" id="thr"><i></i></div><div class="cap">THR</div></div>
             <div><div class="bar-v" id="brk"><i></i></div><div class="cap">BRK</div></div>
@@ -312,8 +387,13 @@ kbd { font-family: var(--num); font-size: 13px; border: 1px solid var(--line); p
   <div class="sheet" id="help" hidden><div><button class="x" data-close>닫기</button>
     <h2>조작과 데이터 안내</h2>
     <h3>단축키</h3>
-    <p><kbd>Space</kbd> 재생/정지 · <kbd>←</kbd><kbd>→</kbd> 5초 이동 · <kbd>[</kbd><kbd>]</kbd> 이전/다음 랩 · <kbd>B</kbd> 베스트랩으로 · <kbd>1</kbd>–<kbd>6</kbd> 카메라 · <kbd>C</kbd> 카메라 전환 · <kbd>G</kbd> 고스트 · <kbd>L</kbd> 라인 · <kbd>M</kbd> 사운드 · <kbd>H</kbd> HUD 숨김 · <kbd>R</kbd> 리포트</p>
-    <p>궤도·추적·탑뷰에서는 드래그로 시점 회전, 휠(핀치)로 거리 조절. 타임라인과 랩 목록을 눌러 이동합니다.</p>
+    <p><kbd>Space</kbd> 재생/정지 · <kbd>←</kbd><kbd>→</kbd> 5초 이동 · <kbd>[</kbd><kbd>]</kbd> 이전/다음 랩 · <kbd>B</kbd> 베스트랩으로 · <kbd>1</kbd>–<kbd>6</kbd> 카메라 · <kbd>C</kbd> 카메라 전환 · <kbd>V</kbd> 차량 전환 · <kbd>O</kbd> 파일 열기 · <kbd>G</kbd> 고스트 · <kbd>L</kbd> 라인 · <kbd>M</kbd> 사운드 · <kbd>H</kbd> HUD 숨김 · <kbd>R</kbd> 리포트</p>
+    <p>궤도·추적·탑뷰에서는 드래그로 시점 회전, 휠로 거리 조절. 타임라인과 랩 목록을 눌러 이동합니다.</p>
+    <h3>차량과 내 주행 파일</h3>
+    <ul>
+      <li>차량을 바꾸면 3D 모델과 계기판이 바뀌고, 그 차의 기어비·타이어·질량으로 RPM·기어·하중 추정을 다시 계산합니다. 주행 기록(위치·속도·랩타임)은 그대로입니다.</li>
+      <li><b>파일</b> 버튼이나 끌어다 놓기로 RaceChrono VBO / CSV v3, 위도·경도·속도 열이 있는 CSV를 열 수 있습니다. 파일은 이 브라우저 안에서만 읽고 어디에도 전송하지 않습니다.</li>
+    </ul>
     <h3>실측 값</h3>
     <ul><li>시간, GPS 위치, GPS 속도 (RaceChrono, 폰 내장 GPS 1Hz). 랩타임은 스타트/피니시 통과 시각으로 계산했습니다.</li></ul>
     <h3>추정 값 <span class="est">추정</span></h3>
@@ -326,12 +406,15 @@ kbd { font-family: var(--num); font-size: 13px; border: 1px solid var(--line); p
     <h3>보정</h3>
     <ul><li>트랙 모양은 빠른 랩들의 GPS 궤적을 겹쳐 만든 주행선이며 폭은 표시용입니다. GPS 속도가 순간적으로 끊긴 구간(<span id="repairN"></span>초)은 위치 기록으로 메웠습니다.</li></ul>
   </div></div>
+  <div id="drop" hidden><div>VBO · CSV 파일을 여기에 놓으세요<small>파일은 이 브라우저 안에서만 읽습니다</small></div></div>
+  <input type="file" id="file" accept=".vbo,.csv,.txt" hidden>
   <div id="loading">LOADING SESSION…</div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="data/session.js"></script>
 <script src="js/telemetry.js"></script>
+<script src="js/parse.js"></script>
 <script src="js/car.js"></script>
 <script src="js/world.js"></script>
 <script src="js/audio.js"></script>

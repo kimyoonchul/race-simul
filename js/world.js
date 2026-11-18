@@ -50,7 +50,8 @@
   }
 
   function build(THREE, scene, renderer, S, bestSample) {
-    var R = S.ref, NR = R.n, i, world = { hw: HW };
+    var R = S.ref, NR = R.n, i, world = { hw: HW }, rootG = new THREE.Group();
+    scene.add(rootG); world.root = rootG;
     var pts = [];
     for (i = 0; i <= NR; i++) { var m = i % NR; pts.push({ x: R.x[m], z: -R.y[m], nx: R.nx[m], nz: -R.ny[m], k: R.k[m] }); }
     world.pts = pts;
@@ -65,7 +66,7 @@
       fragmentShader: 'uniform vec3 h; uniform vec3 z; uniform vec3 sun; varying vec3 d; void main(){ vec3 n = normalize(d); float t = pow(clamp(n.y,0.0,1.0),0.55); vec3 c = mix(h,z,t); float s = max(dot(n,sun),0.0); c += vec3(1.0,0.93,0.8)*(pow(s,350.0)*3.0 + pow(s,12.0)*0.12); if(n.y<0.0) c = mix(h, vec3(0.07,0.10,0.06), clamp(-n.y*6.0,0.0,1.0)); gl_FragColor = vec4(c,1.0);\n#include <encodings_fragment>\n}',
     });
     var sky = new THREE.Mesh(new THREE.SphereGeometry(4500, 32, 16), skyMat);
-    sky.renderOrder = -10; scene.add(sky); world.sky = sky;
+    sky.renderOrder = -10; rootG.add(sky); world.sky = sky;
     scene.fog = new THREE.Fog(0x000000, 350, 2600); scene.fog.color.copy(horizon);
     world.fog = scene.fog;
     try {
@@ -74,12 +75,12 @@
       scene.environment = pm.fromScene(envScene, 0.03).texture; pm.dispose();
     } catch (e) { /* 환경맵 없이도 동작 */ }
 
-    scene.add(new THREE.HemisphereLight(0xdfeeff, 0x54603f, 0.55));
+    rootG.add(new THREE.HemisphereLight(0xdfeeff, 0x54603f, 0.55));
     var sun = new THREE.DirectionalLight(0xfff2de, 1.55);
     sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
     var sc = sun.shadow.camera; sc.left = -16; sc.right = 16; sc.top = 16; sc.bottom = -16; sc.near = 10; sc.far = 160;
     sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.03;
-    scene.add(sun); scene.add(sun.target);
+    rootG.add(sun); rootG.add(sun.target);
     world.sun = sun; world.sunDir = sunDir;
 
     // ── 지면 ─────────────────────────────────────────────────────────
@@ -93,7 +94,7 @@
     }, true);
     grassTex.repeat.set(140, 140);
     var ground = new THREE.Mesh(new THREE.PlaneGeometry(7000, 7000), new THREE.MeshLambertMaterial({ map: grassTex }));
-    ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+    ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; rootG.add(ground);
 
     // ── 트랙 ─────────────────────────────────────────────────────────
     var asphalt = canvasTex(THREE, 256, 512, function (g, w, h) {
@@ -107,12 +108,12 @@
       for (k = 0; k < 7; k++) { g.beginPath(); var x0 = r() * w; g.moveTo(x0, 0); g.bezierCurveTo(x0 + 20, h * 0.3, x0 - 20, h * 0.6, x0 + 6, h); g.stroke(); }
     }, true);
     var verge = new THREE.Mesh(ribbon(THREE, pts, HW + 3.2, -HW - 3.2, 0.012), decalMat(THREE, { color: 0x4f6638 }, 1));
-    verge.receiveShadow = true; scene.add(verge);
+    verge.receiveShadow = true; rootG.add(verge);
     var road = new THREE.Mesh(ribbon(THREE, pts, HW, -HW, 0.03, { uvLen: 14 }), decalMat(THREE, { map: asphalt }, 2));
-    road.receiveShadow = true; scene.add(road);
+    road.receiveShadow = true; rootG.add(road);
     var lineMat = decalMat(THREE, { color: 0xe8e8e2 }, 3);
-    scene.add(new THREE.Mesh(ribbon(THREE, pts, HW - 0.2, HW - 0.42, 0.045), lineMat));
-    scene.add(new THREE.Mesh(ribbon(THREE, pts, -HW + 0.2, -HW + 0.42, 0.045), lineMat));
+    rootG.add(new THREE.Mesh(ribbon(THREE, pts, HW - 0.2, HW - 0.42, 0.045), lineMat));
+    rootG.add(new THREE.Mesh(ribbon(THREE, pts, -HW + 0.2, -HW + 0.42, 0.045), lineMat));
 
     // 연석: 코너 안쪽에 빨강/흰색
     var kPos = [], kCol = [], kIdx = [], seg = Math.max(1, Math.round(2.2 / R.spacing));
@@ -132,7 +133,7 @@
     kg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(kPos), 3));
     kg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(kCol), 3));
     kg.setIndex(kIdx); kg.computeVertexNormals();
-    var kerbs = new THREE.Mesh(kg, decalMat(THREE, { vertexColors: true }, 4)); kerbs.receiveShadow = true; scene.add(kerbs);
+    var kerbs = new THREE.Mesh(kg, decalMat(THREE, { vertexColors: true }, 4)); kerbs.receiveShadow = true; rootG.add(kerbs);
 
     // 레이싱 라인: 베스트랩의 제동(빨강)·가속(초록)·타력(노랑)
     var lineGeo = ribbon(THREE, pts, 0.28, -0.28, 0.06, {
@@ -144,7 +145,7 @@
       },
     });
     var racing = new THREE.Mesh(lineGeo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.62, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -10, fog: true }));
-    racing.renderOrder = 1; scene.add(racing); world.racingLine = racing;
+    racing.renderOrder = 1; rootG.add(racing); world.racingLine = racing;
 
     // 스타트/피니시: 체커 라인과 갠트리
     var p0 = pts[0], fwd = new THREE.Vector3(-p0.nz, 0, p0.nx); // 진행 방향(왼쪽 법선을 -90° 회전)
@@ -155,7 +156,7 @@
     var sfLine = new THREE.Mesh(new THREE.PlaneGeometry(1.6, HW * 2), decalMat(THREE, { map: checker }, 6));
     sfLine.geometry.rotateX(-Math.PI / 2); sfLine.geometry.rotateY(0);
     checker.center.set(0.5, 0.5); checker.rotation = Math.PI / 2;
-    sfLine.position.set(p0.x, 0.062, p0.z); sfLine.rotation.y = yawSF; scene.add(sfLine);
+    sfLine.position.set(p0.x, 0.062, p0.z); sfLine.rotation.y = yawSF; rootG.add(sfLine);
     var gantry = new THREE.Group(), steel = new THREE.MeshStandardMaterial({ color: 0x2a2f36, roughness: 0.5, metalness: 0.6 });
     [-1, 1].forEach(function (sg) { var post = new THREE.Mesh(new THREE.BoxGeometry(0.45, 7.2, 0.45), steel); post.position.set(0, 3.6, sg * (HW + 1.8)); post.castShadow = true; gantry.add(post); });
     var beam = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.3, HW * 2 + 4.2), steel); beam.position.set(0, 6.9, 0); gantry.add(beam);
@@ -169,10 +170,10 @@
       var sign = new THREE.Mesh(new THREE.PlaneGeometry(HW * 2 + 3.4, 1.15), new THREE.MeshBasicMaterial({ map: signTex }));
       sign.position.set(sg * 0.27, 6.9, 0); sign.rotation.y = sg > 0 ? Math.PI / 2 : -Math.PI / 2; gantry.add(sign);
     });
-    gantry.position.set(p0.x, 0, p0.z); gantry.rotation.y = yawSF; scene.add(gantry);
+    gantry.position.set(p0.x, 0, p0.z); gantry.rotation.y = yawSF; rootG.add(gantry);
 
     // 코너 표지(자동 검출 번호)·섹터 표지
-    var signs = new THREE.Group(); scene.add(signs); world.signs = signs;
+    var signs = new THREE.Group(); rootG.add(signs); world.signs = signs;
     S.corners.forEach(function (c) {
       var p = pts[Math.round(c.uApex * NR) % NR], side = c.dir === 'L' ? -1 : 1; // 코너 바깥쪽
       var s = label(THREE, c.name, { fg: '#ffd166' });
@@ -183,7 +184,7 @@
       var p = pts[Math.round(u * NR) % NR], s = label(THREE, 'S' + (k + 1) + ' ▸ S' + (k + 2), { fg: '#7fd0ff', w: 4.6 });
       s.position.set(p.x + p.nx * (HW + 3), 3.4, p.z + p.nz * (HW + 3)); signs.add(s);
       var bar = new THREE.Mesh(new THREE.PlaneGeometry(0.5, HW * 2), decalMat(THREE, { color: 0x7fd0ff, transparent: true, opacity: 0.7 }, 6));
-      bar.geometry.rotateX(-Math.PI / 2); bar.position.set(p.x, 0.062, p.z); bar.rotation.y = Math.atan2(-p.nx, -p.nz); scene.add(bar);
+      bar.geometry.rotateX(-Math.PI / 2); bar.position.set(p.x, 0.062, p.z); bar.rotation.y = Math.atan2(-p.nx, -p.nz); rootG.add(bar);
     });
 
     // ── 진입·퇴장 도로와 패독 ────────────────────────────────────────
@@ -195,11 +196,11 @@
         var a = poly[Math.max(0, q - 2)], b = poly[Math.min(poly.length - 1, q + 2)], tx = b[0] - a[0], ty = b[1] - a[1], tl = Math.hypot(tx, ty) || 1;
         ap.push({ x: poly[q][0], z: -poly[q][1], nx: -ty / tl, nz: -tx / tl });
       }
-      var m2 = new THREE.Mesh(ribbon(THREE, ap, 3.4, -3.4, 0.02), roadMat2); m2.receiveShadow = true; scene.add(m2);
+      var m2 = new THREE.Mesh(ribbon(THREE, ap, 3.4, -3.4, 0.02), roadMat2); m2.receiveShadow = true; rootG.add(m2);
     });
     var home = S.access.length ? S.access[0][0] : [0, 0];
     var pad = new THREE.Mesh(new THREE.CircleGeometry(46, 48), decalMat(THREE, { color: 0x45484d }, 1.2));
-    pad.rotation.x = -Math.PI / 2; pad.position.set(home[0], 0.018, -home[1]); pad.receiveShadow = true; scene.add(pad);
+    pad.rotation.x = -Math.PI / 2; pad.position.set(home[0], 0.018, -home[1]); pad.receiveShadow = true; rootG.add(pad);
     // 건물: 주행 경로에서 가장 먼 방향에 배치
     var bestDir = 0, bestD = -1, a8;
     for (a8 = 0; a8 < 16; a8++) {
@@ -213,7 +214,7 @@
     var band = new THREE.Mesh(new THREE.BoxGeometry(64.2, 4.2, 22.2), glassM); band.position.y = 3.2; bld.add(band);
     var roof = new THREE.Mesh(new THREE.BoxGeometry(70, 0.6, 27), white); roof.position.y = 9.4; bld.add(roof);
     bld.position.set(home[0] + Math.cos(bestDir) * 62, 0, -(home[1] + Math.sin(bestDir) * 62));
-    bld.rotation.y = bestDir + Math.PI / 2; scene.add(bld);
+    bld.rotation.y = bestDir + Math.PI / 2; rootG.add(bld);
 
     // ── 나무(늦가을 단풍) ────────────────────────────────────────────
     var r = rng(1028), xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
@@ -242,13 +243,21 @@
       mt.compose(new THREE.Vector3(sp[0], 4.4 * sp[2], -sp[1]), q4, new THREE.Vector3(sp[2], sp[2] * (0.9 + sp[3] * 0.5), sp[2])); crown.setMatrixAt(k, mt);
       crown.setColorAt(k, col.setHex(palette[(sp[3] * palette.length) | 0]));
     });
-    crown.castShadow = true; scene.add(trunk); scene.add(crown);
+    crown.castShadow = true; rootG.add(trunk); rootG.add(crown);
 
     // 그림자 광원이 차를 따라다니도록
     world.follow = function (x, y, z) {
       sun.position.set(x + sunDir.x * 70, y + sunDir.y * 70, z + sunDir.z * 70);
       sun.target.position.set(x, y, z); sun.target.updateMatrixWorld();
       sky.position.set(x, 0, z);
+    };
+    world.dispose = function () {
+      scene.remove(rootG);
+      rootG.traverse(function (o) {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+      });
+      if (scene.environment) { scene.environment.dispose(); scene.environment = null; }
     };
     return world;
   }

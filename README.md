@@ -7,6 +7,16 @@ RaceChrono로 기록한 서킷 주행(GPS)을 브라우저에서 3D로 다시 �
 - 계기판 HUD: 속도, RPM·기어, 시프트 라이트, 랩타이머, 베스트 대비 델타, 섹터, G-G, 하중 이동, 디스크 온도
 - 베스트랩 고스트카, 트랙 위 레이싱 라인(제동 빨강 / 가속 초록), 코너별 최저속 비교, 스피드 트랩
 - NEW BEST LAP · COOL DOWN · TOP SPEED 배너, 세션 리포트, 엔진 사운드
+- 차량 3종 선택(계기판도 각각 다름): Z4 M40i(흰색·GT 윙), M340i Touring(파랑), Stinger 3.3T(그린·빨간 캘리퍼)
+- 내 주행 파일 열기: RaceChrono VBO / CSV v3, 위도·경도·속도 열이 있는 CSV — 브라우저 안에서만 처리(서버 전송 없음)
+
+데모: https://kimyoonchul.github.io/race-simul/
+
+## 내 파일로 보기
+
+화면 오른쪽 위 **파일** 버튼을 누르거나 VBO/CSV 파일을 화면에 끌어다 놓습니다.
+RaceChrono에서는 Export session → `Performance/Circuit Tools (.vbo)` 또는 `CSV v3 (.csv)`로 내보내면 됩니다.
+스타트/피니시를 두 번 이상 통과한 기록이어야 랩이 잡힙니다. 차량은 왼쪽 위에서 고릅니다.
 
 ## 실행
 

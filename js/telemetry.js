@@ -24,6 +24,8 @@
     crr: 0.012,
     mu: 1.0,
     driveEff: 0.9,
+    traction: 0.55, // 구동륜 접지 한계(후륜 0.55, 사륜 0.92)
+    wb: 2.47, track: 1.61, hcg: 0.47, torqueNm: 500,
   };
 
   function clamp(x, a, b) { return x < a ? a : x > b ? b : x; }
@@ -185,25 +187,44 @@
     }
 
     // ── 2. 스타트/피니시 통과와 랩 ────────────────────────────────────
-    function gateCrossings(g, halfWidth) {
-      var dx = g.x2 - g.x, dy = g.y2 - g.y, len = Math.hypot(dx, dy); dx /= len; dy /= len;
-      var res = [];
+    // 게이트의 두 점이 '중심 + 진행방향 기준점'(RaceChrono)인지 '게이트 양 끝'(Racelogic)인지 주행 방향으로 판별
+    function gateFrame(g) {
+      var dx = g.x2 - g.x, dy = g.y2 - g.y, len = Math.hypot(dx, dy) || 1, bi = -1, bd = Infinity, q;
+      dx /= len; dy /= len;
+      for (q = 1; q < N - 1; q++) { if (V[q] < 3) continue; var d = (X[q] - g.x) * (X[q] - g.x) + (Y[q] - g.y) * (Y[q] - g.y); if (d < bd) { bd = d; bi = q; } }
+      var along = true, cx = g.x, cy = g.y;
+      if (bi > 0) { var tx = X[bi + 1] - X[bi - 1], ty = Y[bi + 1] - Y[bi - 1], tl = Math.hypot(tx, ty) || 1; along = Math.abs((tx * dx + ty * dy) / tl) > 0.6; }
+      if (!along) { cx = (g.x + g.x2) / 2; cy = (g.y + g.y2) / 2; var ndx = -dy; dy = dx; dx = ndx; }
+      return { x: cx, y: cy, dx: dx, dy: dy, half: along ? 18 : Math.max(12, len * 0.65) };
+    }
+    function gateCrossings(g) {
+      var fm = gateFrame(g), res = [];
       for (var q = 0; q < N - 1; q++) {
-        var sa = (X[q] - g.x) * dx + (Y[q] - g.y) * dy;
-        var sb = (X[q + 1] - g.x) * dx + (Y[q + 1] - g.y) * dy;
+        var sa = (X[q] - fm.x) * fm.dx + (Y[q] - fm.y) * fm.dy;
+        var sb = (X[q + 1] - fm.x) * fm.dx + (Y[q + 1] - fm.y) * fm.dy;
         if ((sa < 0) === (sb < 0)) continue;
         var fr = sa / (sa - sb);
         var px0 = X[q] + (X[q + 1] - X[q]) * fr, py0 = Y[q] + (Y[q + 1] - Y[q]) * fr;
-        if (Math.abs(-(px0 - g.x) * dy + (py0 - g.y) * dx) > halfWidth) continue;
+        if (Math.abs(-(px0 - fm.x) * fm.dy + (py0 - fm.y) * fm.dx) > fm.half) continue;
         res.push({ t: q + fr, dir: sb > sa ? 1 : -1 });
       }
       var pos = res.filter(function (r) { return r.dir > 0; }).length;
       var keep = pos * 2 >= res.length ? 1 : -1;
       return res.filter(function (r) { return r.dir === keep; }).map(function (r) { return r.t; });
     }
-    var sf = raw.gates.filter(function (g) { return g.kind === 'Start'; })[0];
-    var splits = raw.gates.filter(function (g) { return g.kind === 'Split'; });
-    var cross = gateCrossings(sf, 18);
+    var gates = raw.gates || [];
+    var sf = gates.filter(function (g) { return g.kind === 'Start'; })[0];
+    var splits = gates.filter(function (g) { return g.kind === 'Split'; });
+    var cross;
+    if (raw.crossings && raw.crossings.length >= 2) cross = raw.crossings.filter(function (t) { return t > 0 && t < N - 1; });
+    else {
+      if (!sf) { // 게이트 정보가 없으면 최고속 지점을 스타트/피니시로 사용
+        var kmx = 2; for (i = 2; i < N - 2; i++) if (V[i] > V[kmx]) kmx = i;
+        sf = { x: X[kmx], y: Y[kmx], x2: X[kmx] + (X[kmx + 1] - X[kmx - 1]), y2: Y[kmx] + (Y[kmx + 1] - Y[kmx - 1]) };
+      }
+      cross = gateCrossings(sf);
+    }
+    if (cross.length < 2) throw new Error('랩을 찾지 못했습니다. 스타트/피니시를 두 번 이상 통과한 기록이 필요합니다.');
     var laps = [];
     for (j = 0; j + 1 < cross.length; j++) {
       laps.push({ n: j + 1, t0: cross[j], t1: cross[j + 1], time: cross[j + 1] - cross[j], spdLen: distAt(cross[j + 1]) - distAt(cross[j]), spd0: distAt(cross[j]) });
@@ -313,7 +334,7 @@
       var f = ((u % 1) + 1) % 1 * NR, a = Math.floor(f) % NR, b = (a + 1) % NR, w = f - a;
       return [ref.x[a] + (ref.x[b] - ref.x[a]) * w, ref.y[a] + (ref.y[b] - ref.y[a]) * w, ref.nx[a], ref.ny[a], ref.k[a] + (ref.k[b] - ref.k[a]) * w];
     }
-    var splitU = splits.map(function (g) { return nearestIdx(ref, g.x, g.y, 0, NR / 2) / NR; }).sort(function (a, b) { return a - b; });
+    var splitU = splits.length ? splits.map(function (g) { return nearestIdx(ref, g.x, g.y, 0, NR / 2) / NR; }).sort(function (a, b) { return a - b; }) : [1 / 3, 2 / 3];
 
     // ── 5. 정차 구간 드리프트 제거 후 부드러운 원시 경로(트랙 밖 표시용) ──
     var Xc = Float64Array.from(X), Yc = Float64Array.from(Y);
@@ -404,7 +425,7 @@
     for (k = 0; k < M; k++) {
       var drag = 0.5 * 1.2 * car.cdA * v[k] * v[k] + car.crr * car.massKg * G;
       var need = car.massKg * aLong[k] * G + drag;
-      var avail = Math.min(car.mu * car.massKg * G * 0.55, car.powerW * car.driveEff / Math.max(v[k], 3));
+      var avail = Math.min(car.mu * car.massKg * G * (car.traction || 0.55), car.powerW * car.driveEff / Math.max(v[k], 3));
       thr[k] = v[k] < 0.3 ? 0 : clamp(need / avail, 0, 1);
       brk[k] = v[k] < 0.3 ? 0 : clamp((-aLong[k] - 0.06) / 0.95, 0, 1);
     }

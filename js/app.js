@@ -1,4 +1,4 @@
-// 재생 루프·카메라·이벤트 연출
+// 재생 루프·카메라·이벤트 연출·차량 전환·파일 열기
 (function () {
   'use strict';
   var T = window.Telemetry, HZ = T.HZ, G = T.G;
@@ -8,12 +8,11 @@
   function wrapPi(a) { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
   function damp(a, b, rate, dt) { return a + wrapPi(b - a) * (1 - Math.exp(-rate * dt)); }
 
-  var S, renderer, scene, camera, world, car, ghost, marker, gmarker, tvCams = [];
-  var st = { t: 0, playing: true, rate: 1, cam: 'chase', ghost: true, line: true, sound: false, hud: true };
+  var S, raw, spec, renderer, scene, camera, world, car, ghost, marker, gmarker, tvCams = [];
+  var st = { t: 0, playing: true, rate: 1, cam: 'chase', ghost: true, line: true, sound: false, hud: true, car: 'z4' };
   var cs = { yaw: 0, drag: 0, zoom: 1, oYaw: 0.9, oPitch: 0.32, oDist: 8.5, topH: 78, topYaw: 0, tv: -1, snap: true, dragging: false };
   var cur = {}, gcur = {}, events = [], evPtr = 0, spin = 0, steer = 0, wall = 0, last = 0, prevGear = 0, prevThr = 0;
   var CAMS = ['chase', 'onboard', 'tv', 'top', 'orbit', 'map'];
-  var v3a, v3b;
 
   function sample(t, o) {
     var f = clamp(t * HZ, 0, S.count - 1), a = Math.floor(f), b = Math.min(S.count - 1, a + 1), w = f - a;
@@ -51,12 +50,10 @@
         else if (l.kind === 'push') HUD.banner('push', 'PUSH LAP', '어택 시작', l.prevBest != null ? '현재 베스트 ' + fmt(l.prevBest) : '', 'ATTACK', 3200);
         else HUD.banner('top', 'WARM UP', '웜업 랩 — 타이어에 열을 넣는 중', '', 'LAP ' + l.n, 3000);
       } });
-      // 스피드 트랩(랩 최고속 지점)
-      var ka = Math.ceil(l.t0 * HZ), kb = Math.floor(l.t1 * HZ), km = ka, k;
+      var ka = Math.ceil(l.t0 * HZ), kb = Math.floor(l.t1 * HZ), km = ka, k; // 스피드 트랩(랩 최고속 지점)
       for (k = ka; k <= kb; k++) if (S.v[k] > S.v[km]) km = k;
       events.push({ t: km / HZ + 0.4, fn: function () { HUD.callout('<b>' + l.vmax.toFixed(0) + '</b> km/h<br>스피드 트랩 · LAP ' + l.n); } });
-      // 코너 탈출 시 최저속 비교
-      S.corners.forEach(function (c) {
+      S.corners.forEach(function (c) { // 코너 탈출 시 최저속 비교
         var m = c.min[j], ref = c.min[S.best]; if (!(m === m) || c.u1 < c.u0) return;
         events.push({ t: lapTimeAtU(l, Math.min(1, c.u1 + 0.004)), fn: function () {
           var d = m - ref, tag = j === S.best ? '' : (Math.abs(d) < 0.5 ? '베스트랩과 동일' : '베스트랩 대비 ' + (d > 0 ? '+' : '−') + Math.abs(d).toFixed(0));
@@ -64,7 +61,7 @@
         } });
       });
     });
-    events.push({ t: S.tTop, fn: function () { HUD.banner('top', 'TOP SPEED', '세션 최고 속도', 'LAP ' + (S.lapIdx[Math.round(S.tTop * HZ)] + 1), S.topSpeed.toFixed(0) + ' km/h', 3400); } });
+    events.push({ t: S.tTop, fn: function () { var li = S.lapIdx[Math.round(S.tTop * HZ)]; HUD.banner('top', 'TOP SPEED', '세션 최고 속도', li >= 0 ? 'LAP ' + (li + 1) : '', S.topSpeed.toFixed(0) + ' km/h', 3400); } });
     events.push({ t: S.tJoin + 1.5, fn: function () { HUD.banner('top', 'OUT LAP', '트랙 진입', '', 'GO', 2600); } });
     events.push({ t: S.laps[S.laps.length - 1].t1 + 4.3, fn: function () { HUD.banner('cool', 'IN LAP', '주행 종료 — 피트로 복귀합니다', '', 'BOX', 3600); } });
     events.push({ t: S.tExit + 2, fn: function () { HUD.banner('', 'SESSION COMPLETE', S.laps.length + '랩 · 최고 ' + S.topSpeed.toFixed(0) + ' km/h', '리포트 버튼(R)에서 전체 기록을 볼 수 있습니다', fmt(bl.time), 6000); } });
@@ -78,23 +75,57 @@
     st.playing = p;
     $('playIcon').setAttribute('d', p ? 'M3 1h4v14H3zM9 1h4v14H9z' : 'M3 1l11 7-11 7z');
   }
-  function seek(t) {
-    st.t = clamp(t, 0, S.duration - 0.01); cs.snap = true; syncEvents(); HUD.clearBanner(); HUD.callout('');
-    if (st.t < S.duration - 0.5 && !st.playing && seek.autoplay) setPlaying(true);
-  }
+  function seek(t) { st.t = clamp(t, 0, S.duration - 0.05); cs.snap = true; syncEvents(); HUD.clearBanner(); HUD.callout(''); }
   function seekLap(j) { j = clamp(j, 0, S.laps.length - 1); seek(Math.max(0, S.laps[j].t0 - 3)); setPlaying(true); }
   function setCam(m) {
     st.cam = m; cs.snap = true; cs.drag = 0;
     Array.prototype.forEach.call($('cams').children, function (b) { b.setAttribute('aria-pressed', String(b.dataset.cam === m)); });
-    if (marker) { marker.visible = m === 'map'; }
-    world.fog.near = m === 'map' ? 4000 : m === 'top' ? 900 : 350; world.fog.far = m === 'map' ? 14000 : m === 'top' ? 4500 : 2600;
+    if (marker) marker.visible = m === 'map';
+    if (world) { world.fog.near = m === 'map' ? 4000 : m === 'top' ? 900 : 350; world.fog.far = m === 'map' ? 14000 : m === 'top' ? 4500 : 2600; }
   }
-  function toggle(id, key, fn) {
-    st[key] = !st[key]; $(id).setAttribute('aria-pressed', String(st[key])); if (fn) fn(st[key]);
-  }
+  function toggle(id, key, fn) { st[key] = !st[key]; $(id).setAttribute('aria-pressed', String(st[key])); if (fn) fn(st[key]); }
   function sheet(id, open) {
     var el = $(id); el.hidden = open === undefined ? !el.hidden : !open;
     $(id === 'report' ? 'tReport' : 'tHelp').setAttribute('aria-pressed', String(!el.hidden));
+  }
+
+  // ── 세션·차량 적재 ───────────────────────────────────────────────
+  // 처리에 실패하면 예외를 던지고 기존 화면은 그대로 둡니다.
+  function loadSession(newRaw, carId, keepTime) {
+    var newSpec = Car.SPECS[carId] || Car.SPECS.z4;
+    var S2 = T.process(newRaw, { car: newSpec.drive });
+    S = S2; raw = newRaw; spec = newSpec; st.car = newSpec.id;
+    if (world) world.dispose();
+    if (car) { scene.remove(car.group); car.dispose(); scene.remove(ghost.group); ghost.dispose(); }
+    world = World.build(THREE, scene, renderer, S, bestSample);
+    world.racingLine.visible = st.line;
+    car = Car.build(THREE, spec); scene.add(car.group);
+    ghost = Car.build(THREE, spec, { ghost: true }); scene.add(ghost.group);
+    buildTvCams(); buildEvents();
+    HUD.init(S, { seekLap: seekLap }, spec);
+    if (!keepTime) { var startLap = S.laps.length > 1 ? S.laps[1] : S.laps[0]; st.t = Math.max(0, startLap.t0 - 6); }
+    st.t = clamp(st.t, 0, S.duration - 0.05);
+    cs.tv = -1; setCam(st.cam); syncEvents(); HUD.clearBanner(); HUD.callout('');
+    try { localStorage.setItem('race-simul-car', spec.id); } catch (e) { /* 저장 불가 환경은 무시 */ }
+    window.__replay = { st: st, S: S, seek: seek, setCam: setCam, setCar: setCar, openText: openText, cur: cur, cs: cs, frame: frame, scene: scene, car: car, world: world, renderer: renderer, camera: camera, advance: function (sec) { for (var i = 0; i < sec * 30; i++) frame(1 / 30); } };
+  }
+  function setCar(id) { if (id !== st.car && Car.SPECS[id]) loadSession(raw, id, true); }
+  function openText(text, name) {
+    try {
+      var r = Parse.parse(text, name);
+      loadSession(r, st.car, false);
+      setPlaying(true);
+      HUD.banner('up', '내 주행 불러옴', S.meta.venue + ' · ' + S.laps.length + '랩', name + ' — 이 브라우저 안에서만 처리했습니다', HUD.fmtLap(S.laps[S.best].time), 4600);
+    } catch (e) {
+      HUD.banner('push', '파일을 열 수 없습니다', e.message || String(e), name, '', 6000);
+    }
+  }
+  function openFile(file) {
+    if (!file) return;
+    var fr = new FileReader();
+    fr.onload = function () { openText(String(fr.result), file.name); };
+    fr.onerror = function () { HUD.banner('push', '파일을 읽지 못했습니다', file.name, '', '', 5000); };
+    fr.readAsText(file);
   }
 
   // ── 카메라 ───────────────────────────────────────────────────────
@@ -113,27 +144,27 @@
     if (st.cam === 'chase') {
       cs.yaw = snap ? h : damp(cs.yaw, h, 4.2, dt);
       if (!cs.dragging) cs.drag *= Math.exp(-2.2 * dt);
-      var yaw = cs.yaw + cs.drag, back = (6.4 + cur.v * 0.022) * cs.zoom, ht = (2.05 + cur.v * 0.005) * cs.zoom;
+      var yaw = cs.yaw + cs.drag, back = (6.6 + cur.v * 0.022) * cs.zoom, ht = (2.1 + cur.v * 0.005) * cs.zoom;
       camera.position.set(px - Math.cos(yaw) * back, ht, pz + Math.sin(yaw) * back);
       camera.lookAt(px + fx * 2.6, 0.95, pz + fz * 2.6);
       fov = 55 + Math.min(21, cur.v * 0.37);
     } else if (st.cam === 'onboard') {
-      var lx = -Math.sin(h), lz = -Math.cos(h), shake = cur.v * 0.00012;
-      camera.position.set(px - fx * 0.5 + lx * 0.36, 1.13 + Math.sin(wall * 41) * shake, pz - fz * 0.5 + lz * 0.36);
-      camera.lookAt(px + fx * 40 + lx * (0.36 + cur.aLat * 5), 0.9, pz + fz * 40 + lz * (0.36 + cur.aLat * 5));
+      var e = spec.eye, lx = -Math.sin(h), lz = -Math.cos(h), shake = cur.v * 0.00012;
+      camera.position.set(px + fx * e[0] + lx * e[2], e[1] + Math.sin(wall * 41) * shake, pz + fz * e[0] + lz * e[2]);
+      camera.lookAt(px + fx * 40 + lx * (e[2] + cur.aLat * 5), 0.9, pz + fz * 40 + lz * (e[2] + cur.aLat * 5));
       camera.rotateZ(-cur.aLat * 0.035);
       fov = 68 + Math.min(10, cur.v * 0.16);
     } else if (st.cam === 'tv') {
       var ax = px + fx * 22, az = pz + fz * 22, bi = 0, bd = Infinity, i;
       for (i = 0; i < tvCams.length; i++) { var d = Math.hypot(tvCams[i].x - ax, tvCams[i].z - az); if (d < bd) { bd = d; bi = i; } }
-      if (cs.tv < 0 || snap || bd < Math.hypot(tvCams[cs.tv].x - ax, tvCams[cs.tv].z - az) * 0.8) cs.tv = bi;
+      if (cs.tv < 0 || cs.tv >= tvCams.length || snap || bd < Math.hypot(tvCams[cs.tv].x - ax, tvCams[cs.tv].z - az) * 0.8) cs.tv = bi;
       var c = tvCams[cs.tv], dist = Math.hypot(c.x - px, c.z - pz);
       camera.position.copy(c); camera.lookAt(px + fx * 1.2, 0.8, pz + fz * 1.2);
       fov = clamp(2 * Math.atan(7.5 / Math.max(6, dist)) * 180 / Math.PI, 5, 46);
     } else if (st.cam === 'top') {
       cs.topYaw = snap ? h : damp(cs.topYaw, h, 2.2, dt);
       camera.position.set(px, cs.topH, pz); camera.up.set(Math.cos(cs.topYaw), 0, -Math.sin(cs.topYaw));
-      camera.lookAt(px + Math.cos(cs.topYaw) * 0.01, 0, pz - Math.sin(cs.topYaw) * 0.01);
+      camera.lookAt(px, 0, pz);
       fov = 46;
     } else if (st.cam === 'orbit') {
       if (!cs.dragging) cs.oYaw += dt * 0.14;
@@ -141,13 +172,12 @@
       camera.position.set(px + cs.oDist * cp * Math.cos(cs.oYaw), 0.5 + cs.oDist * Math.sin(cs.oPitch), pz + cs.oDist * cp * Math.sin(cs.oYaw));
       camera.lookAt(px, 0.72, pz); fov = 42;
     } else { // map
-      var b = world.bounds, asp = camera.aspect, ex = b.xmax - b.xmin + 150, ey = b.ymax - b.ymin + 150, land = asp > 1;
+      var b = world.bounds, asp = camera.aspect, ex = b.xmax - b.xmin + 150, ey = b.ymax - b.ymin + 150, land = (asp > 1) === (ey > ex);
       fov = 30;
-      var tan = Math.tan(fov * Math.PI / 360), H = land ? Math.max(ex / 2, ey / 2 / asp) / tan : Math.max(ey / 2, ex / 2 / asp) / tan;
-      H *= 1.12;
+      var tan = Math.tan(fov * Math.PI / 360), H = (land ? Math.max(ex / 2, ey / 2 / asp) : Math.max(ey / 2, ex / 2 / asp)) / tan * 1.12;
       camera.position.set(b.cx, H, -b.cy);
       if (land) camera.up.set(1, 0, 0); else camera.up.set(0, 0, -1);
-      camera.lookAt(b.cx, 0, -b.cy + 0.001 * (land ? 0 : 0));
+      camera.lookAt(b.cx, 0, -b.cy);
     }
     if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = snap ? fov : camera.fov + (fov - camera.fov) * (1 - Math.exp(-6 * dt)); camera.updateProjectionMatrix(); }
     cs.snap = false;
@@ -157,7 +187,6 @@
     var w = appEl.clientWidth, h = appEl.clientHeight;
     renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
   }
-
   function ringSprite(color) {
     var c = document.createElement('canvas'); c.width = c.height = 64; var g = c.getContext('2d');
     g.strokeStyle = color; g.lineWidth = 7; g.beginPath(); g.arc(32, 32, 22, 0, 6.3); g.stroke(); g.fillStyle = color; g.beginPath(); g.arc(32, 32, 9, 0, 6.3); g.fill();
@@ -174,16 +203,16 @@
     wall += dt;
     if (st.playing) {
       st.t += dt * st.rate;
-      if (st.t >= S.duration - 0.02) { st.t = S.duration - 0.02; setPlaying(false); sheet('report', true); }
+      if (st.t >= S.duration - 0.05) { st.t = S.duration - 0.05; setPlaying(false); sheet('report', true); }
       fireEvents();
     }
     sample(st.t, cur);
     var px = cur.x, pz = -cur.y, adv = st.playing ? dt * st.rate : 0;
 
     // 차량 자세
-    spin += cur.v * adv / Car.dims.rT;
+    spin += cur.v * adv / spec.D.rT;
     var kappa = cur.v > 2.5 ? cur.aLat * G / (cur.v * cur.v) : 0;
-    steer += (clamp(Math.atan(2.47 * kappa) * 1.25, -0.55, 0.55) - steer) * (1 - Math.exp(-10 * dt));
+    steer += (clamp(Math.atan(S.car.wb * kappa) * 1.25, -0.55, 0.55) - steer) * (1 - Math.exp(-10 * dt));
     var flame = false;
     if (st.playing && st.rate <= 2) {
       if (cur.gear > prevGear && prevGear > 0 && cur.rpm > 4300 && cur.thr > 0.5) flame = true;
@@ -209,7 +238,6 @@
     ghost.group.visible = !!gst && st.cam !== 'onboard';
     marker.position.set(px, 1.5, pz);
     gmarker.visible = st.cam === 'map' && !!gst; if (gst) gmarker.position.set(gst.x, 1.5, -gst.y);
-    car.group.visible = true;
 
     updateCamera(dt, px, pz);
     renderer.render(scene, camera);
@@ -225,6 +253,7 @@
   function bindInput() {
     $('play').addEventListener('click', function () { if (!st.playing && st.t >= S.duration - 0.5) seek(0); setPlaying(!st.playing); });
     $('cams').addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) setCam(b.dataset.cam); });
+    $('cars').addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) setCar(b.dataset.car); });
     $('rate').addEventListener('click', function (e) {
       var b = e.target.closest('button'); if (!b) return; st.rate = +b.dataset.rate;
       Array.prototype.forEach.call($('rate').children, function (x) { x.setAttribute('aria-pressed', String(x === b)); });
@@ -234,15 +263,25 @@
     $('tSound').addEventListener('click', function () { toggle('tSound', 'sound', function (v) { if (v) { if (!Engine.start()) { st.sound = false; $('tSound').setAttribute('aria-pressed', 'false'); } } else Engine.stop(); }); });
     $('tReport').addEventListener('click', function () { sheet('report'); });
     $('tHelp').addEventListener('click', function () { sheet('help'); });
+    $('tFile').addEventListener('click', function () { $('file').click(); });
+    $('file').addEventListener('change', function () { openFile(this.files[0]); this.value = ''; });
     Array.prototype.forEach.call(document.querySelectorAll('.sheet'), function (s) {
       s.addEventListener('click', function (e) { if (e.target === s || e.target.hasAttribute('data-close')) sheet(s.id, false); });
     });
+
+    // 끌어다 놓기
+    var depth = 0;
+    appEl.addEventListener('dragenter', function (e) { if (e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types, 'Files') >= 0) { depth++; $('drop').hidden = false; e.preventDefault(); } });
+    appEl.addEventListener('dragover', function (e) { if (!$('drop').hidden) e.preventDefault(); });
+    appEl.addEventListener('dragleave', function () { depth = Math.max(0, depth - 1); if (!depth) $('drop').hidden = true; });
+    appEl.addEventListener('drop', function (e) { depth = 0; $('drop').hidden = true; if (e.dataTransfer && e.dataTransfer.files.length) { e.preventDefault(); openFile(e.dataTransfer.files[0]); } });
 
     var tlEl = $('timeline'), scrub = false;
     function tlSeek(e) { var r = tlEl.getBoundingClientRect(); seek(clamp((e.clientX - r.left) / r.width, 0, 1) * S.duration); }
     tlEl.addEventListener('pointerdown', function (e) { scrub = true; tlEl.setPointerCapture(e.pointerId); tlSeek(e); });
     tlEl.addEventListener('pointermove', function (e) { if (scrub) tlSeek(e); });
     tlEl.addEventListener('pointerup', function () { scrub = false; });
+    tlEl.addEventListener('pointercancel', function () { scrub = false; });
 
     var lastX = 0, lastY = 0;
     canvas.addEventListener('pointerdown', function (e) { cs.dragging = true; lastX = e.clientX; lastY = e.clientY; canvas.setPointerCapture(e.pointerId); });
@@ -274,9 +313,11 @@
       else if (k === 'b' || k === 'B') seekLap(S.best);
       else if (k >= '1' && k <= '6') setCam(CAMS[+k - 1]);
       else if (k === 'c' || k === 'C') setCam(CAMS[(CAMS.indexOf(st.cam) + 1) % CAMS.length]);
+      else if (k === 'v' || k === 'V') setCar(Car.ORDER[(Car.ORDER.indexOf(st.car) + 1) % Car.ORDER.length]);
       else if (k === 'g' || k === 'G') $('tGhost').click();
       else if (k === 'l' || k === 'L') $('tLine').click();
       else if (k === 'm' || k === 'M') $('tSound').click();
+      else if (k === 'o' || k === 'O') $('tFile').click();
       else if (k === 'r' || k === 'R') sheet('report');
       else if (k === '?' || k === '/') sheet('help');
       else if (k === 'h' || k === 'H') { st.hud = !st.hud; appEl.classList.toggle('hud-off', !st.hud); }
@@ -287,28 +328,18 @@
 
   // ── 시작 ─────────────────────────────────────────────────────────
   function boot() {
-    S = T.process(window.SESSION_RAW);
     renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputEncoding = THREE.sRGBEncoding; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     scene = new THREE.Scene(); camera = new THREE.PerspectiveCamera(56, 1, 0.3, 9000);
-    v3a = new THREE.Vector3(); v3b = new THREE.Vector3();
-    world = World.build(THREE, scene, renderer, S, bestSample);
-    car = Car.build(THREE); scene.add(car.group);
-    ghost = Car.build(THREE, { ghost: true }); scene.add(ghost.group);
     marker = ringSprite('#ffffff'); marker.visible = false; scene.add(marker);
     gmarker = ringSprite('#b98aff'); gmarker.visible = false; scene.add(gmarker);
-    buildTvCams(); buildEvents();
-    HUD.init(S, { seekLap: seekLap });
+    var saved = null; try { saved = localStorage.getItem('race-simul-car'); } catch (e) { /* 무시 */ }
+    loadSession(window.SESSION_RAW, Car.SPECS[saved] ? saved : 'z4', false);
     bindInput(); resize();
-
-    // 첫 플라잉 랩 직전에서 시작
-    var startLap = S.laps.length > 1 ? S.laps[1] : S.laps[0];
-    st.t = Math.max(0, startLap.t0 - 6); syncEvents();
     var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     setPlaying(!reduce);
-    window.__replay = { st: st, S: S, seek: seek, setCam: setCam, cur: cur, cs: cs, frame: frame, scene: scene, car: car, world: world, renderer: renderer, camera: camera, advance: function (sec) { for (var i = 0; i < sec * 30; i++) frame(1 / 30); } };
     $('loading').classList.add('done');
     requestAnimationFrame(tick);
   }
