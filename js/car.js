@@ -160,6 +160,17 @@
     return new THREE.CanvasTexture(c);
   }
 
+  // 가속 불꽃 텍스처: 오른쪽 끝(배기구)이 가장 밝고 왼쪽으로 가늘어지며 사라집니다
+  function jetTexture(THREE) {
+    var c = document.createElement('canvas'); c.width = 128; c.height = 32;
+    var g = c.getContext('2d'); g.translate(128, 16); g.scale(8, 1);
+    var grd = g.createRadialGradient(0, 0, 0, 0, 0, 16);
+    grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(0.2, 'rgba(190,238,255,1)');
+    grd.addColorStop(0.5, 'rgba(40,150,255,0.92)'); grd.addColorStop(0.8, 'rgba(30,70,255,0.55)'); grd.addColorStop(1, 'rgba(40,40,255,0)');
+    g.fillStyle = grd; g.fillRect(-16, -16, 16, 32);
+    return new THREE.CanvasTexture(c);
+  }
+
   function buildWheel(THREE, M, D, width, left) {
     var rootG = new THREE.Group(), spin = new THREE.Group(), face = new THREE.Group(), h = width / 2, r = D.rT, i;
     rootG.add(spin); spin.add(face);
@@ -238,7 +249,13 @@
     }
 
     var wheels = [], flames = [], brakeGlows = [], brakeLit = 0, steerWheel = null;
+    var jets = [], jetGlows = [], jetMat = null, jetSpill = null, jetT = 0;
     if (!ghost) {
+      // 가속 불꽃(연출): 배기구에서 뒤로 뻗는 푸른 불꽃. 어느 쪽에서 봐도 보이도록 수평·수직 판을 겹칩니다.
+      // 제동은 붉은 빛, 가속은 푸른 빛으로 구분됩니다. 밝은 낮 장면에서도 또렷하도록 일반 알파 블렌딩에 톤매핑을 뺍니다.
+      var jetGeo = new THREE.PlaneGeometry(1, 1); jetGeo.translate(-0.5, 0, 0);
+      jetMat = new THREE.MeshBasicMaterial({ map: jetTexture(THREE), transparent: true, depthWrite: false, side: THREE.DoubleSide, opacity: 0, toneMapped: false, fog: false });
+      var jetGlowTex = glowTexture(THREE, 'rgba(240,250,255,1)', 'rgba(50,150,255,0.8)');
       // 제동등 글로우: 블룸이 없어 발광만으로는 잘 안 보이므로 붉은 빛 번짐을 겹칩니다.
       // 가산 블렌딩은 흰 차체 위에서 하얗게 날아가므로 일반 알파 블렌딩을 씁니다.
       var brakeTex = glowTexture(THREE, 'rgba(255,58,40,1)', 'rgba(255,22,12,0.5)');
@@ -270,6 +287,11 @@
         spec.exhaust.forEach(function (ez) {
           var tip = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.054, 0.12, 16, 1, true), M.chrome);
           tip.rotation.z = Math.PI / 2; tip.scale.set(1, 1, 1.4); tip.position.set(D.tail + 0.024, 0.275, sg * ez); chassis.add(tip);
+          var jet = new THREE.Group(), jv = new THREE.Mesh(jetGeo, jetMat), jh = new THREE.Mesh(jetGeo, jetMat);
+          jh.rotation.x = Math.PI / 2; jet.add(jv); jet.add(jh);
+          jet.position.set(D.tail - 0.02, 0.275, sg * ez); jet.visible = false; chassis.add(jet); jets.push(jet);
+          var jg = new THREE.Sprite(new THREE.SpriteMaterial({ map: jetGlowTex, depthWrite: false, transparent: true, opacity: 0, toneMapped: false, fog: false }));
+          jg.position.set(D.tail - 0.1, 0.275, sg * ez); jg.visible = false; chassis.add(jg); jetGlows.push(jg);
         });
         var fl = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(THREE, 'rgba(255,240,200,1)', 'rgba(255,120,20,0.7)'), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
         fl.position.set(D.tail - 0.15, 0.28, sg * spec.exhaust[0]); fl.scale.set(0.55, 0.3, 1); chassis.add(fl); flames.push(fl);
@@ -283,6 +305,9 @@
       // 노면에 비치는 붉은 빛
       var spill = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 2.8), new THREE.MeshBasicMaterial({ map: brakeTex, transparent: true, depthWrite: false, opacity: 0 }));
       spill.rotation.x = -Math.PI / 2; spill.position.set(D.tail - 1.05, 0.045, 0); spill.renderOrder = 3; spill.userData.k = 0.5; group.add(spill); brakeGlows.push(spill);
+      // 노면에 비치는 푸른 빛(가속 불꽃)
+      jetSpill = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 3.2), new THREE.MeshBasicMaterial({ map: jetGlowTex, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0, toneMapped: false }));
+      jetSpill.rotation.x = -Math.PI / 2; jetSpill.position.set(D.tail - 1.6, 0.05, 0); jetSpill.renderOrder = 3; jetSpill.visible = false; group.add(jetSpill);
       // 바닥·휠하우스·실내(어두운 속)
       box(D.nose - D.tail - 0.62, 0.12, 1.44, M.trim, (D.nose + D.tail) / 2, 0.23, 0);
       [D.axF, D.axR].forEach(function (ax) {
@@ -317,7 +342,7 @@
     var flameT = 0;
     return {
       group: group, chassis: chassis, spec: spec,
-      // steer(rad, +좌), spin(rad 누적), roll/pitch(rad), brake(0..1), heat(0..1), flame, dt
+      // steer(rad, +좌), spin(rad 누적), roll/pitch(rad), brake(0..1), heat(0..1), flame, boost(0..1), kick(0..1), dt
       set: function (s) {
         chassis.rotation.x = s.roll || 0; chassis.rotation.z = s.pitch || 0;
         for (var i = 0; i < wheels.length; i++) {
@@ -335,6 +360,17 @@
           if (s.flame) flameT = 0.16;
           flameT = Math.max(0, flameT - (s.dt || 0));
           flames.forEach(function (f, k) { f.material.opacity = flameT > 0 ? 0.55 + 0.45 * Math.sin((flameT * 90) + k) : 0; f.scale.x = 0.45 + flameT * 2.2; });
+          // 가속 불꽃: 세기(boost)에 따라 길어지고, 가속을 시작하는 순간(kick) 한 번 크게 뿜습니다
+          var bo = clamp(s.boost || 0, 0, 1), kk = clamp(s.kick || 0, 0, 1), jo = clamp(bo * 1.7 + kk, 0, 1), jOn = jo > 0.01;
+          jetT += s.dt || 0;
+          jetMat.opacity = jo;
+          for (var j = 0; j < jets.length; j++) {
+            var fl = 0.82 + 0.18 * Math.sin(jetT * 67 + j * 2.1) * Math.sin(jetT * 23 + j), wid = 0.3 + 0.2 * bo + 0.22 * kk;
+            jets[j].visible = jOn; jets[j].scale.set((0.6 + 1.7 * bo + 1.4 * kk) * fl, wid, wid);
+            var gs = (0.42 + 0.4 * bo + 0.5 * kk) * fl;
+            jetGlows[j].visible = jOn; jetGlows[j].material.opacity = jo * 0.9; jetGlows[j].scale.set(gs, gs, 1);
+          }
+          jetSpill.visible = jOn; jetSpill.material.opacity = clamp(bo * 0.6 + kk * 0.4, 0, 0.9);
         }
       },
       dispose: function () {

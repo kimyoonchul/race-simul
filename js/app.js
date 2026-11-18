@@ -12,6 +12,10 @@
   var st = { t: 0, playing: true, rate: 1, cam: 'chase', ghost: true, line: true, sound: false, hud: true, car: 'z4' };
   var cs = { yaw: 0, drag: 0, zoom: 1, oYaw: 0.9, oPitch: 0.32, oDist: 8.5, topH: 78, topYaw: 0, tv: -1, snap: true, dragging: false, lg: 0 };
   var cur = {}, gcur = {}, events = [], evPtr = 0, spin = 0, steer = 0, wall = 0, last = 0, prevGear = 0, prevThr = 0;
+  // 가속 연출 상태: b 지속 세기(0..1), kick 가속을 시작하는 순간의 한 방(1에서 사그라듦), kickS 카메라용으로 다듬은 kick
+  // bk 강한 제동을 시작하는 순간의 흔들림, sfxN 효과음 글자를 좌우 번갈아 띄우기 위한 횟수
+  var fxs = { b: 0, kick: 0, kickS: 0, armed: true, bk: 0, brkArmed: true, sfxN: 0 }, fxOn = false, fxV = null, reduceMotion = false, vw = 1, vh = 1;
+  function sfxPop(kind, text) { if (fxOn && !reduceMotion && st.cam !== 'map') FX.pop(kind, text, fxs.sfxN++ % 2 ? 1 : -1); }
   var CAMS = ['chase', 'onboard', 'tv', 'top', 'orbit', 'map'];
 
   function sample(t, o) {
@@ -107,7 +111,7 @@
     st.t = clamp(st.t, 0, S.duration - 0.05);
     cs.tv = -1; setCam(st.cam); syncEvents(); HUD.clearBanner(); HUD.callout('');
     try { localStorage.setItem('race-simul-car', spec.id); } catch (e) { /* 저장 불가 환경은 무시 */ }
-    window.__replay = { st: st, S: S, seek: seek, setCam: setCam, setCar: setCar, openText: openText, cur: cur, cs: cs, frame: frame, scene: scene, car: car, world: world, renderer: renderer, camera: camera, advance: function (sec) { for (var i = 0; i < sec * 30; i++) frame(1 / 30); } };
+    window.__replay = { st: st, S: S, seek: seek, setCam: setCam, setCar: setCar, openText: openText, cur: cur, cs: cs, fx: fxs, frame: frame, scene: scene, car: car, world: world, renderer: renderer, camera: camera, advance: function (sec) { for (var i = 0; i < sec * 30; i++) frame(1 / 30); } };
   }
   function setCar(id) { if (id !== st.car && Car.SPECS[id]) loadSession(raw, id, true); }
   function openText(text, name) {
@@ -141,25 +145,30 @@
   function updateCamera(dt, px, pz) {
     var h = cur.hd, fx = Math.cos(h), fz = -Math.sin(h), fov = 56, snap = cs.snap;
     camera.up.set(0, 1, 0);
-    // 가감속 반응: 가속하면 차가 앞으로 치고 나가고(카메라가 처짐), 감속하면 카메라가 차에 붙습니다
+    // 가감속 반응: 가속하면 차가 앞으로 치고 나가고(카메라가 처지고 화각이 넓어짐), 감속하면 카메라가 차에 붙습니다
     var lgT = clamp(cur.aLong, -1.1, 0.8);
     cs.lg = snap ? lgT : cs.lg + (lgT - cs.lg) * (1 - Math.exp(-3.2 * dt));
+    var pos = Math.max(0, cs.lg), dive = Math.min(0, cs.lg);
+    // 가속 흔들림: 세기에 비례하고, 가속을 시작하는 순간 크게 한 번 흔들립니다
+    var shA = reduceMotion ? 0 : fxs.b * 0.07 + fxs.kick * 0.22 + fxs.bk * 0.16;
+    var n1 = Math.sin(wall * 52.3) * 0.6 + Math.sin(wall * 87.1 + 1.7) * 0.4, n2 = Math.sin(wall * 61.7 + 0.9) * 0.6 + Math.sin(wall * 97.3 + 2.3) * 0.4, n3 = Math.sin(wall * 44.9 + 0.4);
     if (st.cam === 'chase') {
       cs.yaw = snap ? h : damp(cs.yaw, h, 4.2, dt);
       if (!cs.dragging) cs.drag *= Math.exp(-2.2 * dt);
-      var base = 6.6 + cur.v * 0.022, kd = 1 + cs.lg * 1.5 / base, dive = Math.min(0, cs.lg);
+      var base = 6.6 + cur.v * 0.022, kd = 1 + (dive * 1.5 + pos * 3.4 + fxs.kickS * 1.6) / base;
       var yaw = cs.yaw + cs.drag, back = base * kd * cs.zoom, ht = (2.1 + cur.v * 0.005) * kd * cs.zoom;
-      camera.position.set(px - Math.cos(yaw) * back, ht, pz + Math.sin(yaw) * back);
+      camera.position.set(px - Math.cos(yaw) * back - Math.sin(yaw) * shA * n1, ht + shA * 0.7 * n2, pz + Math.sin(yaw) * back - Math.cos(yaw) * shA * n1);
       // 감속으로 카메라가 붙을 때 차가 계기판 뒤로 내려가지 않도록 시선을 차 쪽으로 당깁니다
-      camera.lookAt(px + fx * (2.6 + dive * 2.0), 0.78 + dive * 0.4, pz + fz * (2.6 + dive * 2.0));
-      fov = 55 + Math.min(21, cur.v * 0.37) + cs.lg * 4;
+      camera.lookAt(px + fx * (2.6 + dive * 2.0), 0.8 + dive * 0.45, pz + fz * (2.6 + dive * 2.0));
+      camera.rotateZ(shA * 0.09 * n3);
+      fov = 55 + Math.min(21, cur.v * 0.37) + dive * 5 + pos * 13 + fxs.kickS * 9;
     } else if (st.cam === 'onboard') {
-      var e = spec.eye, lx = -Math.sin(h), lz = -Math.cos(h), shake = cur.v * 0.00012;
+      var e = spec.eye, lx = -Math.sin(h), lz = -Math.cos(h), shake = cur.v * 0.00012, shO = shA * 0.25;
       var eyeX = e[0] - cs.lg * 0.05; // 감속하면 몸이 앞으로 쏠림
-      camera.position.set(px + fx * eyeX + lx * e[2], e[1] + Math.sin(wall * 41) * shake, pz + fz * eyeX + lz * e[2]);
+      camera.position.set(px + fx * eyeX + lx * (e[2] + shO * n1), e[1] + Math.sin(wall * 41) * shake + shO * n2, pz + fz * eyeX + lz * (e[2] + shO * n1));
       camera.lookAt(px + fx * 40 + lx * (e[2] + cur.aLat * 5), 0.9 + cs.lg * 0.7, pz + fz * 40 + lz * (e[2] + cur.aLat * 5));
-      camera.rotateZ(-cur.aLat * 0.035);
-      fov = 68 + Math.min(10, cur.v * 0.16);
+      camera.rotateZ(-cur.aLat * 0.035 + shA * 0.07 * n3);
+      fov = 68 + Math.min(10, cur.v * 0.16) + dive * 5 + pos * 11 + fxs.kickS * 8;
     } else if (st.cam === 'tv') {
       var ax = px + fx * 22, az = pz + fz * 22, bi = 0, bd = Infinity, i;
       for (i = 0; i < tvCams.length; i++) { var d = Math.hypot(tvCams[i].x - ax, tvCams[i].z - az); if (d < bd) { bd = d; bi = i; } }
@@ -192,6 +201,7 @@
   function resize() {
     var w = appEl.clientWidth, h = appEl.clientHeight;
     renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+    vw = w; vh = h; if (fxOn) FX.resize(w, h);
   }
   function ringSprite(color) {
     var c = document.createElement('canvas'); c.width = c.height = 64; var g = c.getContext('2d');
@@ -203,7 +213,8 @@
   // ── 프레임 ───────────────────────────────────────────────────────
   function tick(now) {
     requestAnimationFrame(tick);
-    frame(Math.min(0.25, (now - last) / 1000 || 0.016)); last = now; // 프레임이 낮아도 실제 시간대로 재생
+    // 프레임이 낮아도 실제 시간대로 재생. __replay.hold는 점검용: 시간을 멈춘 채 화면만 다시 그립니다
+    frame(window.__replay && window.__replay.hold ? 0 : Math.min(0.25, (now - last) / 1000 || 0.016)); last = now;
   }
   function frame(dt) {
     wall += dt;
@@ -214,6 +225,20 @@
     }
     sample(st.t, cur);
     var px = cur.x, pz = -cur.y, adv = st.playing ? dt * st.rate : 0;
+
+    // 가속 연출 세기: 속도가 늘어나는 정도(종가속도)를 따르고, 고속에서 전개 중이면 절반까지 유지합니다.
+    // 감속·정지·일시정지·빨리감기에서는 0. 가속을 막 시작하는 순간에만 kick이 한 번 터집니다.
+    var bT = st.playing && st.rate <= 2 ? Math.max(clamp((cur.aLong - 0.12) / 0.45, 0, 1), cur.aLong > 0.04 ? 0.5 * clamp((cur.thr - 0.55) / 0.4, 0, 1) : 0) : 0;
+    var fxLive = st.playing && st.rate <= 2;
+    if (cs.snap) { fxs.b = bT; fxs.kick = fxs.kickS = fxs.bk = 0; fxs.armed = bT < 0.08; fxs.brkArmed = cur.aLong > -0.15; if (fxOn) FX.clearPops(); }
+    else {
+      fxs.b += (bT - fxs.b) * (1 - Math.exp(-(bT > fxs.b ? 7 : 4) * dt));
+      if (bT > 0.4 && fxs.armed) { fxs.kick = 1; fxs.armed = false; sfxPop('acc', cur.v < 21 ? '부아앙~' : '부웅~'); } else if (bT < 0.08) fxs.armed = true;
+      // 강한 제동(0.4g 이상)을 시작하는 순간: 끼익~ 글자와 짧은 흔들림
+      if (fxLive && cur.aLong < -0.4 && fxs.brkArmed) { fxs.bk = 1; fxs.brkArmed = false; sfxPop('brk', cur.v > 42 ? '끼이익~' : '끼익~'); } else if (cur.aLong > -0.15) fxs.brkArmed = true;
+      fxs.kick *= Math.exp(-3.2 * dt); fxs.bk *= Math.exp(-5 * dt);
+      fxs.kickS += (fxs.kick - fxs.kickS) * (1 - Math.exp(-14 * dt));
+    }
 
     // 차량 자세
     spin += cur.v * adv / spec.D.rT;
@@ -227,7 +252,7 @@
     prevGear = cur.gear; prevThr += (cur.thr - prevThr) * (1 - Math.exp(-6 * dt));
     if (flame) Engine.pop();
     car.group.position.set(px, 0, pz); car.group.rotation.y = cur.hd;
-    car.set({ steer: steer, spin: spin, roll: cur.aLat * 0.045, pitch: cur.aLong * 0.04, brake: cur.brk, heat: clamp((cur.brakeT - 280) / 240, 0, 1), flame: flame, dt: dt });
+    car.set({ steer: steer, spin: spin, roll: cur.aLat * 0.045, pitch: cur.aLong * 0.04, brake: cur.brk, heat: clamp((cur.brakeT - 280) / 240, 0, 1), flame: flame, boost: fxs.b, kick: fxs.kick, dt: dt });
     world.follow(px, 0, pz);
 
     // 고스트(베스트랩)
@@ -247,6 +272,16 @@
 
     updateCamera(dt, px, pz);
     renderer.render(scene, camera);
+    if (fxOn) {
+      // 화면 효과는 차를 따라가는 시점(추적·온보드)에서만. 소실점은 차 앞쪽 먼 지점을 화면에 투영해 잡습니다.
+      var fxK = (st.cam === 'chase' || st.cam === 'onboard') && !reduceMotion ? 1 : 0;
+      fxV.set(px + Math.cos(cur.hd) * 90, 1.2, pz - Math.sin(cur.hd) * 90).project(camera);
+      var fwd = fxV.z < 1, fcx = fwd ? clamp(fxV.x * 0.5 + 0.5, 0.25, 0.75) : 0.5, fcy = fwd ? clamp(0.5 - fxV.y * 0.5, 0.2, 0.6) : 0.42;
+      // 효과음 글자는 차 옆에 띄웁니다(온보드는 화면 가운데 기준, 전체 지도에서는 띄우지 않음)
+      var ax = vw * 0.5, ay = vh * 0.5;
+      if (st.cam !== 'onboard') { fxV.set(px, 0.9, pz).project(camera); if (fxV.z < 1) { ax = (fxV.x * 0.5 + 0.5) * vw; ay = (0.5 - fxV.y * 0.5) * vh; } }
+      FX.frame({ src: canvas, level: fxs.b * fxK, kick: fxs.kick * fxK, cx: fcx, cy: fcy, dt: dt, adv: adv, sfx: st.cam !== 'map' && st.rate <= 2, ax: ax, ay: ay, w: vw, h: vh });
+    }
 
     var delta = 0;
     if (cur.lap >= 0) delta = (st.t - S.laps[cur.lap].t0) - (lapTimeAtU(S.laps[S.best], cur.u) - S.laps[S.best].t0);
@@ -341,11 +376,12 @@
     scene = new THREE.Scene(); camera = new THREE.PerspectiveCamera(56, 1, 0.3, 9000);
     marker = ringSprite('#ffffff'); marker.visible = false; scene.add(marker);
     gmarker = ringSprite('#b98aff'); gmarker.visible = false; scene.add(gmarker);
+    fxV = new THREE.Vector3(); fxOn = !!(window.FX && $('fxc') && FX.init($('fxc'), $('sfx')));
+    reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     var saved = null; try { saved = localStorage.getItem('race-simul-car'); } catch (e) { /* 무시 */ }
     loadSession(window.SESSION_RAW, Car.SPECS[saved] ? saved : 'z4', false);
     bindInput(); resize();
-    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    setPlaying(!reduce);
+    setPlaying(!reduceMotion);
     $('loading').classList.add('done');
     requestAnimationFrame(tick);
   }
