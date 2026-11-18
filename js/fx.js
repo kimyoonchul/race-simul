@@ -104,14 +104,15 @@
     var gl = Math.min(0.75, 0.16 * o.level + 0.55 * o.kick);
     if (gl > 0.01) {
       var e2 = g.createRadialGradient(cx, cy, R * 0.3, cx, cy, R);
-      e2.addColorStop(0, 'rgba(205,230,255,0)'); e2.addColorStop(1, 'rgba(205,230,255,' + gl.toFixed(3) + ')');
+      var tc = o.tint || '205,230,255'; // 차량별 부스터 색에 맞춘 섬광
+      e2.addColorStop(0, 'rgba(' + tc + ',0)'); e2.addColorStop(1, 'rgba(' + tc + ',' + gl.toFixed(3) + ')');
       g.globalAlpha = 1; g.fillStyle = e2; g.fillRect(0, 0, W, H);
     }
     g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
     shown = true;
   }
 
-  // o: { src, level, kick, cx, cy, dt(실제 시간), adv(재생 시간), sfx(글자 표시 여부), ax, ay(차의 화면 위치 CSS px), w, h(화면 CSS px) }
+  // o: { src, level, kick, cx, cy, dt(실제 시간), adv(재생 시간), sfx(글자 표시 여부), ax, ay(차의 화면 위치 CSS px), w, h(화면 CSS px), tint(섬광 색 'r,g,b') }
   function frame(o) { drawBlur(o); stepPops(o); }
 
   window.FX = { init: init, resize: resize, frame: frame, pop: pop, clearPops: clearPops };

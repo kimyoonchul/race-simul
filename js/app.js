@@ -282,7 +282,7 @@
       // 효과음 글자는 차 옆에 띄웁니다(온보드는 화면 가운데 기준, 전체 지도에서는 띄우지 않음)
       var ax = vw * 0.5, ay = vh * 0.5;
       if (st.cam !== 'onboard') { fxV.set(px, 0.9, pz).project(camera); if (fxV.z < 1) { ax = (fxV.x * 0.5 + 0.5) * vw; ay = (0.5 - fxV.y * 0.5) * vh; } }
-      FX.frame({ src: canvas, level: fxs.b * fxK, kick: fxs.kick * fxK, cx: fcx, cy: fcy, dt: dt, adv: adv, sfx: st.cam !== 'map' && st.rate <= 2, ax: ax, ay: ay, w: vw, h: vh });
+      FX.frame({ src: canvas, level: fxs.b * fxK, kick: fxs.kick * fxK, cx: fcx, cy: fcy, dt: dt, adv: adv, sfx: st.cam !== 'map' && st.rate <= 2, ax: ax, ay: ay, w: vw, h: vh, tint: spec.jet ? spec.jet[0] : null });
     }
 
     var delta = 0;

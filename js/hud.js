@@ -13,39 +13,86 @@
   function css(name) { return getComputedStyle($('app')).getPropertyValue(name).trim(); }
   function speedColor(v, lo, hi) { var f = clamp((v - lo) / (hi - lo), 0, 1); return 'hsl(' + (225 - 225 * f) + ',90%,' + (52 + 8 * Math.sin(f * 3.14)) + '%)'; }
 
-  // ── 게이지(호) ───────────────────────────────────────────────────
+  // ── 게이지(크로노그래프풍 눈금 다이얼) ───────────────────────────
   // 각도는 SVG 기준(+x에서 시계 방향). sweep이 음수면 반시계.
-  var CX = 100, CY = 104, RAD = 84;
+  // 눈금은 호에 stroke-dasharray를 걸어 그립니다. 값 호도 같은 간격이라 지나온 눈금만 켜집니다.
+  var CX = 100, CY = 104, R_TICK = 85.5;
   var GAUGES = {
     z4: { tach: { a0: 150, sweep: 240 } },
     m340i: { tach: { a0: 60, sweep: -210 }, speedo: { a0: 120, sweep: 210, max: 280 } },
     stinger: { tach: { a0: 135, sweep: 270 } },
   };
+  var REG = { a0: 135, sweep: 270 }, REGS = [['rThr', 'THR'], ['rBrk', 'BRK'], ['rDsc', 'DISC']]; // 보조 다이얼
   var tach = GAUGES.z4.tach, speedo = null;
-  function pt(a, r) { var rad = a * Math.PI / 180; return (CX + r * Math.cos(rad)).toFixed(1) + ' ' + (CY + r * Math.sin(rad)).toFixed(1); }
-  function arc(g, f0, f1) {
-    if (f1 < f0 + 0.002) f1 = f0 + 0.002;
+  function pt(a, r, cx, cy) { var rad = a * Math.PI / 180; return ((cx == null ? CX : cx) + r * Math.cos(rad)).toFixed(2) + ' ' + ((cy == null ? CY : cy) + r * Math.sin(rad)).toFixed(2); }
+  function arcLen(g, r) { return r * Math.abs(g.sweep) * Math.PI / 180; }
+  function arc(g, f0, f1, r, cx, cy) {
+    if (f1 < f0 + 0.001) f1 = f0 + 0.001;
     var a0 = g.a0 + g.sweep * f0, a1 = g.a0 + g.sweep * f1;
-    return 'M' + pt(a0, RAD) + ' A' + RAD + ' ' + RAD + ' 0 ' + (Math.abs(a1 - a0) > 180 ? 1 : 0) + ' ' + (g.sweep > 0 ? 1 : 0) + ' ' + pt(a1, RAD);
+    return 'M' + pt(a0, r, cx, cy) + ' A' + r + ' ' + r + ' 0 ' + (Math.abs(a1 - a0) > 180 ? 1 : 0) + ' ' + (g.sweep > 0 ? 1 : 0) + ' ' + pt(a1, r, cx, cy);
+  }
+  // 눈금 고리: 전체 눈금을 n등분한 간격으로 폭 tw인 눈금을 f0부터 끝까지. 첫 눈금이 f0 위에 오도록 호를 눈금 반폭만큼 앞에서 시작합니다.
+  function ticks(id, g, f0, r, sw, n, tw, cx, cy) {
+    var el = $(id), L = arcLen(g, r), e = tw / 2 / L;
+    el.setAttribute('d', arc(g, f0 - e, 1 + e, r, cx, cy));
+    el.setAttribute('stroke-width', sw);
+    el.setAttribute('stroke-dasharray', tw + ' ' + (L / n - tw).toFixed(3));
+  }
+  // 값 호(켜지는 눈금)의 간격을 맞춰 두고, 시작 보정값을 돌려줍니다
+  function litTicks(id, g, r, sw, n, tw) {
+    var el = $(id), L = arcLen(g, r);
+    el.setAttribute('stroke-width', sw); el.setAttribute('stroke-dasharray', tw + ' ' + (L / n - tw).toFixed(3));
+    return tw / 2 / L;
   }
   function numbers(gid, g, max, step, div) {
     var grp = $(gid); grp.innerHTML = '';
     for (var k = 0; k <= max; k += step) {
-      var t = document.createElementNS('http://www.w3.org/2000/svg', 'text'), p = pt(g.a0 + g.sweep * (k / max), 63).split(' ');
+      var t = document.createElementNS('http://www.w3.org/2000/svg', 'text'), p = pt(g.a0 + g.sweep * (k / max), 63.5).split(' ');
       t.setAttribute('x', p[0]); t.setAttribute('y', p[1]); t.textContent = k / div; grp.appendChild(t);
     }
+  }
+  // 큰 다이얼 하나: 테두리 + 잔눈금(nMin) + 중간 눈금(nMid) + 굵은 눈금(nMaj)
+  function dial(p, g, nMin, nMid, nMaj) {
+    $(p + 'Bez').setAttribute('d', arc(g, 0, 1, 94));
+    ticks(p + 'Trk', g, 0, R_TICK, 9, nMin, 1.1);
+    ticks(p + 'Mid', g, 0, 84, 12, nMid, 1.4);
+    ticks(p + 'Maj', g, 0, 82.5, 15, nMaj, 2);
+    g.e = litTicks(p + 'Val', g, R_TICK, 9, nMin, 1.8);
+  }
+  function regSvg(id, name) {
+    return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle class="face" cx="32" cy="32" r="30.5"/>' +
+      '<path class="trk" id="' + id + 'T"/><path class="val" id="' + id + 'V"/><path class="maj" id="' + id + 'M"/>' +
+      '<text class="nm" x="32" y="24.5">' + name + '</text><text class="nv" id="' + id + 'N" x="32" y="59"></text>' +
+      '<g class="hand" id="' + id + 'H"><line x1="26" y1="32" x2="56.5" y2="32"/><circle cx="32" cy="32" r="2.6"/></g></svg>';
   }
   function buildGauges() {
     var cfg = GAUGES[theme] || GAUGES.z4, red = S.car.redline;
     tach = cfg.tach; tach.max = Math.ceil((red + 500) / 1000) * 1000;
-    $('tTrk').setAttribute('d', arc(tach, 0, 1));
-    $('tRed').setAttribute('d', arc(tach, red / tach.max, 1));
+    dial('t', tach, tach.max / 100, tach.max / 500, tach.max / 1000);        // 100rpm 잔눈금, 500·1000rpm 굵은 눈금
+    ticks('tRed', tach, red / tach.max, R_TICK, 9, tach.max / 100, 1.8);
+    $('tRedB').setAttribute('d', arc(tach, red / tach.max, 1, 91.6));
     numbers('tNums', tach, tach.max, 1000, 1000);
     speedo = cfg.speedo || null;
-    if (speedo) { $('sTrk').setAttribute('d', arc(speedo, 0, 1)); numbers('sNums', speedo, speedo.max, 40, 1); }
+    if (speedo) { dial('s', speedo, speedo.max / 5, speedo.max / 20, speedo.max / 40); numbers('sNums', speedo, speedo.max, 40, 1); } // 5km/h 잔눈금
+    REGS.forEach(function (d) {
+      $(d[0]).innerHTML = regSvg(d[0], d[1]);
+      ticks(d[0] + 'T', REG, 0, 26, 5, 20, 0.9, 32, 32);
+      ticks(d[0] + 'M', REG, 0, 25, 7, 4, 1.5, 32, 32);
+      REG.e = litTicks(d[0] + 'V', REG, 26, 5, 20, 1.5);
+    });
     var sh = $('shift'); sh.innerHTML = '';
     for (var k = 0; k < 14; k++) sh.appendChild(document.createElement('i'));
     cache.lit = -1;
+  }
+  // 보조 다이얼 값 갱신: 바뀔 때만 SVG 속성을 씁니다
+  function reg(id, f, txt) {
+    var q = Math.round(clamp(f, 0, 1) * 250);
+    if (cache['r:' + id] !== q) {
+      cache['r:' + id] = q;
+      $(id + 'V').setAttribute('d', arc(REG, -REG.e, q / 250, 26, 32, 32));
+      $(id + 'H').setAttribute('transform', 'rotate(' + (REG.a0 + REG.sweep * q / 250).toFixed(1) + ' 32 32)');
+    }
+    set(id + 'N', txt);
   }
 
   // ── 미니맵 ───────────────────────────────────────────────────────
@@ -157,33 +204,54 @@
   }
 
   // ── G-G ──────────────────────────────────────────────────────────
+  // 점은 몸이 쏠리는 쪽으로 움직입니다: 좌회전이면 오른쪽(aLat +는 좌회전), 제동이면 위(앞), 가속이면 아래(뒤).
+  // 눈금 고리·원·글자는 한 번만 그려 두고 매 프레임 복사합니다.
+  var ggBg = null;
+  function ggBackground(W) {
+    var b = document.createElement('canvas'); b.width = b.height = W;
+    var g = b.getContext('2d'), c = W / 2, sc = (W / 2 - 20) / 1.3, i, a, k, d;
+    for (i = 0; i < 72; i++) { // 바깥 눈금 고리: 5° 간격, 30°마다 길게
+      a = i * Math.PI / 36; k = i % 6 === 0;
+      g.strokeStyle = k ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.34)'; g.lineWidth = k ? 2.6 : 1.6;
+      g.beginPath(); g.moveTo(c + Math.cos(a) * (c - (k ? 13 : 8)), c + Math.sin(a) * (c - (k ? 13 : 8))); g.lineTo(c + Math.cos(a) * (c - 1.5), c + Math.sin(a) * (c - 1.5)); g.stroke();
+    }
+    g.strokeStyle = 'rgba(255,255,255,0.18)'; g.lineWidth = 1.5;
+    [0.5, 1.0].forEach(function (r) { g.beginPath(); g.arc(c, c, r * sc, 0, 6.3); g.stroke(); });
+    g.setLineDash([6, 6]); g.strokeStyle = 'rgba(255,178,36,0.55)'; g.beginPath(); g.arc(c, c, 1.2 * sc, 0, 6.3); g.stroke(); g.setLineDash([]);
+    g.strokeStyle = 'rgba(255,255,255,0.14)'; g.beginPath(); g.moveTo(c, c - 1.2 * sc); g.lineTo(c, c + 1.2 * sc); g.moveTo(c - 1.2 * sc, c); g.lineTo(c + 1.2 * sc, c); g.stroke();
+    g.strokeStyle = 'rgba(255,255,255,0.42)'; g.lineWidth = 1.4;
+    for (i = -12; i <= 12; i++) { // 십자선 위 0.1g 눈금, 0.5g마다 길게
+      if (!i) continue; k = i % 5 === 0 ? 7 : 3.5; d = i * 0.1 * sc;
+      g.beginPath(); g.moveTo(c + d, c - k); g.lineTo(c + d, c + k); g.moveTo(c - k, c + d); g.lineTo(c + k, c + d); g.stroke();
+    }
+    g.fillStyle = 'rgba(165,177,192,0.95)'; g.font = '600 17px "Barlow Condensed", "Noto Sans KR", "Arial Narrow", sans-serif'; g.textAlign = 'center';
+    g.fillText('제동', c, 28); g.fillText('가속', c, W - 15);
+    g.save(); g.translate(27, c); g.rotate(-Math.PI / 2); g.fillText('우회전', 0, 0); g.restore();
+    g.save(); g.translate(W - 27, c); g.rotate(Math.PI / 2); g.fillText('좌회전', 0, 0); g.restore();
+    return { cv: b, sc: sc, ice: css('--ice') };
+  }
   function drawGG(st) {
     var cv = $('gg'); if (cv.offsetParent === null) return;
-    var g = cv.getContext('2d'), W = cv.width, c = W / 2, sc = (W / 2 - 16) / 1.3, i;
-    g.clearRect(0, 0, W, W);
-    g.strokeStyle = 'rgba(255,255,255,0.16)'; g.lineWidth = 1.5;
-    [0.5, 1.0].forEach(function (r) { g.beginPath(); g.arc(c, c, r * sc, 0, 6.3); g.stroke(); });
-    g.setLineDash([6, 6]); g.strokeStyle = 'rgba(255,178,36,0.5)'; g.beginPath(); g.arc(c, c, 1.2 * sc, 0, 6.3); g.stroke(); g.setLineDash([]);
-    g.strokeStyle = 'rgba(255,255,255,0.12)'; g.beginPath(); g.moveTo(c, 10); g.lineTo(c, W - 10); g.moveTo(10, c); g.lineTo(W - 10, c); g.stroke();
-    g.fillStyle = 'rgba(147,160,176,0.9)'; g.font = '600 18px "Barlow Condensed", "Arial Narrow", sans-serif'; g.textAlign = 'center';
-    g.fillText('가속', c, 18); g.fillText('제동', c, W - 6);
-    // 횡방향은 실차 G미터처럼 몸이 쏠리는 쪽으로 표시: 좌회전이면 점이 오른쪽 (aLat +는 좌회전)
-    g.textAlign = 'left'; g.fillText('우회전', 4, c - 8); g.textAlign = 'right'; g.fillText('좌회전', W - 4, c - 8); g.textAlign = 'center';
+    var g = cv.getContext('2d'), W = cv.width, c = W / 2, i;
+    if (!ggBg) ggBg = ggBackground(W);
+    var sc = ggBg.sc;
+    g.clearRect(0, 0, W, W); g.drawImage(ggBg.cv, 0, 0);
     ggTrail.push([st.aLat, st.aLong]); if (ggTrail.length > 46) ggTrail.shift();
-    var tc = css('--ice');
+    g.strokeStyle = ggBg.ice; g.lineWidth = 3;
     for (i = 1; i < ggTrail.length; i++) {
-      g.globalAlpha = i / ggTrail.length * 0.75; g.strokeStyle = tc; g.lineWidth = 3;
-      g.beginPath(); g.moveTo(c + ggTrail[i - 1][0] * sc, c - ggTrail[i - 1][1] * sc); g.lineTo(c + ggTrail[i][0] * sc, c - ggTrail[i][1] * sc); g.stroke();
+      g.globalAlpha = i / ggTrail.length * 0.75;
+      g.beginPath(); g.moveTo(c + ggTrail[i - 1][0] * sc, c + ggTrail[i - 1][1] * sc); g.lineTo(c + ggTrail[i][0] * sc, c + ggTrail[i][1] * sc); g.stroke();
     }
     g.globalAlpha = 1;
-    var x = c + st.aLat * sc, y = c - st.aLong * sc;
+    var x = c + st.aLat * sc, y = c + st.aLong * sc;
     g.fillStyle = st.aLong < -0.15 ? css('--red') : '#fff'; g.beginPath(); g.arc(x, y, 9, 0, 6.3); g.fill();
     g.strokeStyle = '#06080b'; g.lineWidth = 2; g.stroke();
   }
 
   // ── 초기화 ───────────────────────────────────────────────────────
   function init(session, callbacks, spec) {
-    S = session; cb = callbacks; cache = {}; ggTrail = [];
+    S = session; cb = callbacks; cache = {}; ggTrail = []; ggBg = null;
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { ggBg = null; }); // 글꼴이 늦게 오면 바탕을 다시 그림
     theme = spec.cluster;
     $('app').setAttribute('data-cluster', theme);
     $('model').innerHTML = spec.brand[0] + ' <b>' + spec.brand[1] + '</b>';
@@ -261,25 +329,38 @@
     set('spd', kmh); set('spd2', kmh); set('spdIn', kmh);
     set('gear', st.v < 0.3 ? 'P' : String(st.gear));
     set('rpmnum', (Math.round(st.rpm / 10) * 10).toLocaleString('en-US'));
-    var f = clamp(st.rpm / tach.max, 0, 1);
-    $('tVal').setAttribute('d', arc(tach, 0, f));
+    // 바늘은 transform 속성 하나로만 돌립니다(CSS transform-origin을 같이 쓰면 중심이 두 번 적용돼 바늘이 계기판 밖으로 나감)
+    var fq = Math.round(clamp(st.rpm / tach.max, 0, 1) * 1000);
+    if (cache.tf !== fq) {
+      cache.tf = fq;
+      $('tVal').setAttribute('d', arc(tach, -tach.e, fq / 1000, R_TICK));
+      $('tNeedle').setAttribute('transform', 'rotate(' + (tach.a0 + tach.sweep * fq / 1000).toFixed(2) + ' ' + CX + ' ' + CY + ')');
+      if (theme === 'stinger') $('tGlow').style.opacity = (0.35 + 0.65 * fq / 1000).toFixed(2);
+    }
     cls('tVal', st.rpm > red - 600 ? 'val hot' : 'val');
     if (theme === 'stinger') {
-      $('tNeedle').setAttribute('transform', 'rotate(' + (tach.a0 + tach.sweep * f + 90).toFixed(1) + ' 100 104)');
-      $('tGlow').style.opacity = (0.35 + 0.65 * f).toFixed(2);
       var w = st.rpm * Math.PI / 30, tq = st.thr * Math.min(car.torqueNm || 500, car.powerW / Math.max(w, 60));
       set('torque', Math.round(tq / 5) * 5);
       set('boost', Math.abs(st.thr * clamp((st.rpm - 1300) / 1500, 0, 1) * 1.05).toFixed(2)); // abs: -0.00 표기 방지
     }
-    if (speedo) $('sVal').setAttribute('d', arc(speedo, 0, clamp(st.v * 3.6 / speedo.max, 0, 1)));
+    if (speedo) {
+      var sq = Math.round(clamp(st.v * 3.6 / speedo.max, 0, 1) * 1000);
+      if (cache.sf !== sq) {
+        cache.sf = sq;
+        $('sVal').setAttribute('d', arc(speedo, -speedo.e, sq / 1000, R_TICK));
+        $('sNeedle').setAttribute('transform', 'rotate(' + (speedo.a0 + speedo.sweep * sq / 1000).toFixed(2) + ' ' + CX + ' ' + CY + ')');
+      }
+    }
     var leds = $('shift').children, lit = clamp(Math.ceil((st.rpm - (red - 2400)) / 2200 * 14), 0, 14), flash = st.rpm > red - 260 && (st.wall * 12 | 0) % 2 === 0;
     if (cache.lit !== lit) { cache.lit = lit; for (var i = 0; i < 14; i++) leds[i].className = i < lit ? (i < 6 ? 'g' : i < 10 ? 'y' : 'r') : ''; }
     cls('shift', flash ? 'flash' : '');
 
-    $('thr').firstChild.style.height = (st.thr * 100).toFixed(0) + '%';
-    $('brk').firstChild.style.height = (st.brk * 100).toFixed(0) + '%';
-    $('btemp').firstChild.style.height = clamp((st.brakeT - 40) / 460 * 100, 2, 100).toFixed(0) + '%';
-    set('btnum', Math.round(st.brakeT / 5) * 5 + '°');
+    reg('rThr', st.thr, Math.round(st.thr * 100));
+    reg('rBrk', st.brk, Math.round(st.brk * 100));
+    reg('rDsc', st.brakeT / 600, Math.round(st.brakeT / 5) * 5 + '°');
+    // 랩 스톱워치 초침: 1/5초씩 끊어 움직임(1.2°)
+    var chr = st.lap >= 0 ? Math.floor((st.t - S.laps[st.lap].t0) * 5) % 300 : 0;
+    if (cache.chr !== chr) { cache.chr = chr; $('chronoH').setAttribute('transform', 'rotate(' + (chr * 1.2).toFixed(1) + ' 24 24)'); }
 
     // 랩 타이머·델타·섹터
     if (st.lap >= 0) {

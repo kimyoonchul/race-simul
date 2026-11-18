@@ -43,7 +43,7 @@
       glass: [[-0.74, 0.02, 0.1, 0.5], [-1.24, -0.98, 0.5, 1.0]],
       head: [0.49, 0.08, 0.44, 0.62], tail: [0.009, 0.434, 0.37, 0.47],
       front: 'kidney', grilleY: 0.5, exhaust: [0.56], mirror: [0.42, 0.945, 0.9], wing: true, brakeBar: [-2.09, 0.93],
-      eye: [-0.5, 1.13, 0.36],
+      eye: [-0.5, 1.13, 0.36], jet: ['190,238,255', '40,150,255', '30,70,255'],   // 가속 불꽃 색(밝은 쪽→짙은 쪽): 흰 차에 얼음빛 파랑
       drive: { gears: ZF8, finalDrive: 3.154, tyreCirc: tyreCirc(275, 35, 19), redline: 7000, idle: 750, massKg: 1700, powerW: 285e3, cdA: 0.62, crr: 0.012, mu: 1.0, driveEff: 0.9, traction: 0.55, wb: 2.47, track: 1.61, hcg: 0.47, torqueNm: 500 },
     },
     m340i: {
@@ -59,7 +59,7 @@
       glass: [[0.16, 0.8, 0.5, 1.0], [-0.42, 0.42, 0.1, 0.38], [-1.28, -0.5, 0.1, 0.38], [-1.92, -1.36, 0.12, 0.38], [-2.33, -2.12, 0.35, 1.0]],
       head: [0.5, 0.07, 0.42, 0.6], tail: [0.01, 0.42, 0.38, 0.5],
       front: 'kidney', grilleY: 0.57, grilleH: 0.2, exhaust: [0.52], mirror: [0.62, 1.0, 0.95], rails: [-1.75, -0.15, 1.452, 0.6], brakeBar: [-2.1, 1.36],
-      eye: [-0.1, 1.2, 0.37],
+      eye: [-0.1, 1.2, 0.37], jet: ['238,208,255', '182,88,255', '108,44,235'],   // 파란 차에 보라
       drive: { gears: ZF8, finalDrive: 2.813, tyreCirc: tyreCirc(255, 35, 19), redline: 7000, idle: 700, massKg: 1890, powerW: 285e3, cdA: 0.68, crr: 0.012, mu: 1.0, driveEff: 0.88, traction: 0.92, wb: 2.851, track: 1.57, hcg: 0.53, torqueNm: 500 },
     },
     stinger: {
@@ -75,7 +75,7 @@
       glass: [[0.16, 0.8, 0.5, 1.0], [-0.42, 0.42, 0.1, 0.38], [-1.25, -0.5, 0.1, 0.38], [-1.72, -1.32, 0.12, 0.36], [-2.0, -1.2, 0.5, 1.0]],
       head: [0.52, 0.08, 0.42, 0.58], tail: [0.01, 0.5, 0.38, 0.48],
       front: 'tiger', grilleY: 0.56, exhaust: [0.42, 0.6], mirror: [0.62, 0.98, 0.96], hoodVents: true, lightBar: true, brakeBar: [-2.0, 1.12],
-      eye: [-0.1, 1.17, 0.38],
+      eye: [-0.1, 1.17, 0.38], jet: ['208,255,228', '44,236,142', '0,168,94'],   // 그린 차에 밝은 민트
       drive: { gears: [3.665, 2.396, 1.61, 1.19, 1.0, 0.826, 0.643, 0.556], finalDrive: 3.538, tyreCirc: tyreCirc(255, 35, 19), redline: 6500, idle: 700, massKg: 1900, powerW: 274e3, cdA: 0.7, crr: 0.012, mu: 1.0, driveEff: 0.88, traction: 0.92, wb: 2.905, track: 1.62, hcg: 0.54, torqueNm: 510 },
     },
   };
@@ -161,12 +161,12 @@
   }
 
   // 가속 불꽃 텍스처: 오른쪽 끝(배기구)이 가장 밝고 왼쪽으로 가늘어지며 사라집니다
-  function jetTexture(THREE) {
+  function jetTexture(THREE, col) {
     var c = document.createElement('canvas'); c.width = 128; c.height = 32;
     var g = c.getContext('2d'); g.translate(128, 16); g.scale(8, 1);
     var grd = g.createRadialGradient(0, 0, 0, 0, 0, 16);
-    grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(0.2, 'rgba(190,238,255,1)');
-    grd.addColorStop(0.5, 'rgba(40,150,255,0.92)'); grd.addColorStop(0.8, 'rgba(30,70,255,0.55)'); grd.addColorStop(1, 'rgba(40,40,255,0)');
+    grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(0.2, 'rgba(' + col[0] + ',1)');
+    grd.addColorStop(0.5, 'rgba(' + col[1] + ',0.92)'); grd.addColorStop(0.8, 'rgba(' + col[2] + ',0.55)'); grd.addColorStop(1, 'rgba(' + col[2] + ',0)');
     g.fillStyle = grd; g.fillRect(-16, -16, 16, 32);
     return new THREE.CanvasTexture(c);
   }
@@ -251,11 +251,13 @@
     var wheels = [], flames = [], brakeGlows = [], brakeLit = 0, steerWheel = null;
     var jets = [], jetGlows = [], jetMat = null, jetSpill = null, jetT = 0;
     if (!ghost) {
-      // 가속 불꽃(연출): 배기구에서 뒤로 뻗는 푸른 불꽃. 어느 쪽에서 봐도 보이도록 수평·수직 판을 겹칩니다.
-      // 제동은 붉은 빛, 가속은 푸른 빛으로 구분됩니다. 밝은 낮 장면에서도 또렷하도록 일반 알파 블렌딩에 톤매핑을 뺍니다.
+      // 가속 불꽃(연출): 배기구에서 뒤로 뻗는 불꽃. 어느 쪽에서 봐도 보이도록 수평·수직 판을 겹칩니다.
+      // 색은 차량마다 다릅니다(spec.jet). 제동의 붉은 빛과 헷갈리지 않게 빨강·주황 계열은 쓰지 않습니다.
+      // 밝은 낮 장면에서도 또렷하도록 일반 알파 블렌딩에 톤매핑을 뺍니다.
+      var jc = spec.jet || ['190,238,255', '40,150,255', '30,70,255'];
       var jetGeo = new THREE.PlaneGeometry(1, 1); jetGeo.translate(-0.5, 0, 0);
-      jetMat = new THREE.MeshBasicMaterial({ map: jetTexture(THREE), transparent: true, depthWrite: false, side: THREE.DoubleSide, opacity: 0, toneMapped: false, fog: false });
-      var jetGlowTex = glowTexture(THREE, 'rgba(240,250,255,1)', 'rgba(50,150,255,0.8)');
+      jetMat = new THREE.MeshBasicMaterial({ map: jetTexture(THREE, jc), transparent: true, depthWrite: false, side: THREE.DoubleSide, opacity: 0, toneMapped: false, fog: false });
+      var jetGlowTex = glowTexture(THREE, 'rgba(' + jc[0] + ',1)', 'rgba(' + jc[1] + ',0.8)');
       // 제동등 글로우: 블룸이 없어 발광만으로는 잘 안 보이므로 붉은 빛 번짐을 겹칩니다.
       // 가산 블렌딩은 흰 차체 위에서 하얗게 날아가므로 일반 알파 블렌딩을 씁니다.
       var brakeTex = glowTexture(THREE, 'rgba(255,58,40,1)', 'rgba(255,22,12,0.5)');
@@ -305,7 +307,7 @@
       // 노면에 비치는 붉은 빛
       var spill = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 2.8), new THREE.MeshBasicMaterial({ map: brakeTex, transparent: true, depthWrite: false, opacity: 0 }));
       spill.rotation.x = -Math.PI / 2; spill.position.set(D.tail - 1.05, 0.045, 0); spill.renderOrder = 3; spill.userData.k = 0.5; group.add(spill); brakeGlows.push(spill);
-      // 노면에 비치는 푸른 빛(가속 불꽃)
+      // 노면에 비치는 가속 불꽃 빛
       jetSpill = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 3.2), new THREE.MeshBasicMaterial({ map: jetGlowTex, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0, toneMapped: false }));
       jetSpill.rotation.x = -Math.PI / 2; jetSpill.position.set(D.tail - 1.6, 0.05, 0); jetSpill.renderOrder = 3; jetSpill.visible = false; group.add(jetSpill);
       // 바닥·휠하우스·실내(어두운 속)
