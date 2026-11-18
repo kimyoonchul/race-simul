@@ -30,7 +30,8 @@ function resample(pts, step, closed) {
 const result = [];
 for (const cfg of VENUES) {
   const src = JSON.parse(fs.readFileSync(path.join(here, cfg.file), 'utf8'));
-  const ways = src.ways.map((w) => ({ ...w, tags: w.tags || {} }));
+  // 멀티폴리곤의 안쪽 고리(구멍)는 도형으로 쓰지 않습니다
+  const ways = src.ways.filter((w) => !String(w.id).includes('/inner')).map((w) => ({ ...w, tags: w.tags || {} }));
   const race = ways.filter((w) => w.tags.highway === 'raceway');
   // 본 코스: 면(area)이 아닌 닫힌 raceway 중 가장 긴 것
   const loopWay = race.filter((w) => w.closed && w.tags.area !== 'yes').sort((a, b) => b.lengthM - a.lengthM)[0];
@@ -59,7 +60,8 @@ for (const cfg of VENUES) {
     .map((w) => {
       const pts = open(w.pts), a = area(pts), lv = parseFloat(w.tags['building:levels']), ht = parseFloat(w.tags.height);
       const stand = w.tags.leisure === 'bleachers' || /스탠드|stand/i.test(w.tags.name || '') || w.tags.building === 'grandstand';
-      const h = stand ? 9 : isFinite(ht) ? ht : isFinite(lv) ? Math.max(4, lv * 3.6) : a >= 3000 ? 12 : a >= 800 ? 8 : 5;
+      // 관람석 도형(bleachers)은 같은 자리의 스탠드 건물보다 낮게 잡아 지붕이 한 면에 겹치지 않게 합니다
+      const h = w.tags.leisure === 'bleachers' ? 5.5 : stand ? 9 : isFinite(ht) ? ht : isFinite(lv) ? Math.max(4, lv * 3.6) : a >= 3000 ? 12 : a >= 800 ? 8 : 5;
       return { h: r1(h), k: stand ? 'stand' : a >= 3000 || lv >= 4 ? 'main' : 'box', name: w.tags.name || '', p: flat(pts) };
     });
   result.push({
