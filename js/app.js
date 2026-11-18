@@ -412,6 +412,7 @@
     bindInput(); resize();
     setPlaying(!reduceMotion);
     $('loading').classList.add('done');
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(placeMap); // 글꼴이 늦게 오면 버튼 줄 접힘이 달라짐
     requestAnimationFrame(tick);
   }
 

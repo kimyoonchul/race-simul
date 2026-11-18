@@ -284,7 +284,7 @@
     // ── 3. 기준 주행선 ────────────────────────────────────────────────
     var maxLen = Math.max.apply(null, okLaps.map(function (l) { return l.spdLen; }));
     var clean = okLaps.filter(function (l) { return l.spdLen >= maxLen * 0.97; });
-    var ref, venue = opts.venue && opts.venue.line && opts.venue.line.length >= 80 ? opts.venue : null, gpsBias = [0, 0];
+    var ref, venue = opts.venue && opts.venue.line && opts.venue.line.length >= 80 ? opts.venue : null, gpsBias = [0, 0], devMed = 0;
     if (venue) {
       // 등록 서킷: 실제 지도 중심선이 기준선. GPS 궤적으로 진행 방향을 판별하고, GPS의 일정한 치우침(평균 벡터)을 빼 줍니다.
       ref = makeRefTruth(venue.line, sfX, sfY, false);
@@ -296,7 +296,8 @@
         if (pi >= 0) { var di = ((ni - pi + NR + NR / 2) % NR) - NR / 2; if (Math.abs(di) < NR / 8) dirSum += di; }
         pi = ni;
       }
-      if (!dev.length || median(dev) > 30) venue = null; // 이 서킷의 주행이 아님 → GPS만으로 처리
+      devMed = dev.length ? median(dev) : 99; // 이 세션 GPS가 중심선에서 벗어나는 정도(중앙값, m)
+      if (devMed > 30) venue = null; // 이 서킷의 주행이 아님 → GPS만으로 처리
       else {
         var rev = dirSum < 0;
         if (rev) ref = makeRefTruth(venue.line, sfX, sfY, true);
@@ -335,7 +336,7 @@
     var iFirst = Math.ceil(first.t0), iLast = Math.floor(last.t1), iJoin, iExit;
     var sPos = new Float64Array(N), latRaw = new Float64Array(N);
     function track() {
-      var win = Math.round(45 / ref.spacing), idx, s, q, step, nidx, d, misses, offLim = venue ? 55 : 13, missLim = venue ? 4 : 2; // 실제 중심선 기준이면 피트 레인까지는 트랙으로 보고, GPS가 튀는 초는 넉넉히 넘김
+      var win = Math.round(45 / ref.spacing), idx, s, q, step, nidx, d, misses, noisy = !!venue && devMed > 8, offLim = noisy ? 55 : venue ? 20 : 13, missLim = noisy ? 8 : venue ? 3 : 2; // 합류·이탈 판정: GPS 기준선은 13m·2초, 실제 중심선은 20m·3초, GPS가 많이 튀는 세션(중심선 편차 중앙값 8m 초과)은 55m·8초
       function at(q2, c) {
         nidx = nearestIdx(ref, X[q2], Y[q2], c, win);
         d = (X[q2] - ref.x[nidx]) * ref.nx[nidx] + (Y[q2] - ref.y[nidx]) * ref.ny[nidx];
@@ -588,7 +589,7 @@
       l.tAtU[0] = 0; l.tAtU[NQ] = l.time;
     });
     var nSec = laps[0].sectors.length, bestSectors = [];
-    for (j = 0; j < nSec; j++) bestSectors.push(Math.min.apply(null, laps.map(function (l) { return l.sectors[j]; })));
+    for (j = 0; j < nSec; j++) bestSectors.push(Math.min.apply(null, timed.map(function (l) { return l.sectors[j]; }))); // 통과 시각을 추정한 랩은 제외
 
     // 랩 성격과 기록 갱신(시간순): push / warm / cool, 섹터 색(best=세션 최고 갱신, up=직전 랩보다 빠름)
     var runBest = Infinity, runSec = []; for (j = 0; j < nSec; j++) runSec.push(Infinity);
@@ -597,8 +598,9 @@
       l.newBest = !l.est && l.time < runBest; // 통과 시각을 추정한 랩은 기록 갱신으로 치지 않음
       if (l.newBest) runBest = l.time;
       l.sectorFlag = l.sectors.map(function (s, si) {
-        var flag = s < runSec[si] ? 'best' : (idx > 0 && s < laps[idx - 1].sectors[si] ? 'up' : 'down');
-        if (s < runSec[si]) runSec[si] = s;
+        var rec = !l.est && s < runSec[si]; // 추정 랩의 섹터는 최고 기록으로 치지 않음
+        var flag = rec ? 'best' : (idx > 0 && s < laps[idx - 1].sectors[si] ? 'up' : 'down');
+        if (rec) runSec[si] = s;
         return flag;
       });
       l.push = l.time <= bestTime * 1.03;
@@ -643,7 +645,8 @@
     });
 
     // 세션 통계
-    var pushLaps = laps.filter(function (l) { return l.push; }), pm = pushLaps.reduce(function (a, l) { return a + l.time; }, 0) / pushLaps.length;
+    var pushLaps = laps.filter(function (l) { return l.push && !l.est; }); if (!pushLaps.length) pushLaps = laps.filter(function (l) { return l.push; });
+    var pm = pushLaps.reduce(function (a, l) { return a + l.time; }, 0) / pushLaps.length;
     var stats = {
       pushCount: pushLaps.length,
       pushMean: pm,
