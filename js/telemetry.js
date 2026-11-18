@@ -153,9 +153,10 @@
     // ── 1. 속도 드롭아웃 1차 보정 ─────────────────────────────────────
     // 폰 GPS가 순간적으로 속도를 낮게 읽는 구간(다음 초에 1g 넘게 '가속')을
     // 차가 낼 수 있는 가속·감속 한계로 메웁니다. 값은 올리기만 합니다.
+    // 한계값은 선택한 차량이 아니라 고정 기준 제원으로 계산 — 차량을 바꿔도 트랙·랩 데이터가 달라지지 않게
     function accelCap(vv) {
-      var drag = 0.5 * 1.2 * car.cdA * vv * vv / car.massKg;
-      return Math.max(0.6, Math.min(0.85 * G, 1.15 * (car.powerW * car.driveEff / (car.massKg * Math.max(vv, 5)) - drag)));
+      var drag = 0.5 * 1.2 * CAR.cdA * vv * vv / CAR.massKg;
+      return Math.max(0.6, Math.min(0.85 * G, 1.15 * (CAR.powerW * CAR.driveEff / (CAR.massKg * Math.max(vv, 5)) - drag)));
     }
     for (i = N - 1; i >= 1; i--) { var lim = V[i] - accelCap(V[i]); if (V[i - 1] < lim) V[i - 1] = lim; }
     for (i = 1; i < N; i++) { var lim2 = V[i - 1] - 1.3 * G; if (V[i] < lim2) V[i] = lim2; }
