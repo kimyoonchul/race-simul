@@ -60,6 +60,8 @@ const data = {
     startUtc,
     source: 'RaceChrono · 폰 내장 GPS 1Hz',
     samples: rows.length,
+    lat0: +lat0.toFixed(7), // 지역 좌표 원점(실제 지도 선형과 맞출 때 사용)
+    lon0: +lon0.toFixed(7),
   },
   gates,
   x: rows.map((r) => r2(local(r.lat, r.lon)[0])), // 동쪽 +m

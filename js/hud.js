@@ -270,8 +270,8 @@
     S.laps.forEach(function (l, j) {
       var b = document.createElement('button');
       b.className = 'lap ' + l.kind + (j === S.best ? ' best' : ''); b.id = 'lap' + j;
-      b.title = l.sectors.map(function (x, k) { return 'S' + (k + 1) + ' ' + x.toFixed(2); }).join(' · ') + ' — 최고 ' + l.vmax.toFixed(0) + 'km/h';
-      b.innerHTML = '<span class="n">' + l.n + '</span><span class="tm">' + fmtLap(l.time) + '</span><span class="bar"><i style="width:' + (100 - (l.time - bt) / Math.max(0.01, worst - bt) * 82).toFixed(0) + '%"></i></span><span class="gap">' + (j === S.best ? 'BEST' : '+' + (l.time - bt).toFixed(2)) + '</span>';
+      b.title = l.sectors.map(function (x, k) { return 'S' + (k + 1) + ' ' + x.toFixed(2); }).join(' · ') + ' — 최고 ' + l.vmax.toFixed(0) + 'km/h' + (l.est ? ' — 출발선 통과 시각 추정(GPS 끊김)' : '');
+      b.innerHTML = '<span class="n">' + l.n + '</span><span class="tm">' + (l.est ? '≈' : '') + fmtLap(l.time) + '</span><span class="bar"><i style="width:' + (100 - (l.time - bt) / Math.max(0.01, worst - bt) * 82).toFixed(0) + '%"></i></span><span class="gap">' + (j === S.best ? 'BEST' : '+' + (l.time - bt).toFixed(2)) + '</span>';
       b.addEventListener('click', function () { cb.seekLap(j); });
       list.appendChild(b);
     });
@@ -292,7 +292,7 @@
     h += '</div><h3>LAPS</h3><div class="tblwrap"><table class="ct"><tr><th>LAP</th><th>TIME</th><th>GAP</th>' + b.sectors.map(function (_, k) { return '<th>S' + (k + 1) + '</th>'; }).join('') + '<th>최고 km/h</th><th>구분</th></tr>';
     var kindName = { push: 'PUSH', cool: 'COOL DOWN', warm: 'WARM UP' };
     S.laps.forEach(function (l, j) {
-      h += '<tr' + (j === S.best ? ' style="color:var(--violet)"' : '') + '><td>' + l.n + '</td><td>' + fmtLap(l.time) + '</td><td>' + (j === S.best ? '—' : '+' + (l.time - b.time).toFixed(2)) + '</td>' + l.sectors.map(function (x, k) { return '<td' + (x === S.bestSectors[k] ? ' style="color:var(--violet)"' : '') + '>' + x.toFixed(2) + '</td>'; }).join('') + '<td>' + l.vmax.toFixed(0) + '</td><td>' + kindName[l.kind] + '</td></tr>';
+      h += '<tr' + (j === S.best ? ' style="color:var(--violet)"' : '') + '><td>' + l.n + '</td><td>' + (l.est ? '≈' : '') + fmtLap(l.time) + '</td><td>' + (j === S.best ? '—' : '+' + (l.time - b.time).toFixed(2)) + '</td>' + l.sectors.map(function (x, k) { return '<td' + (x === S.bestSectors[k] ? ' style="color:var(--violet)"' : '') + '>' + x.toFixed(2) + '</td>'; }).join('') + '<td>' + l.vmax.toFixed(0) + '</td><td>' + kindName[l.kind] + '</td></tr>';
     });
     h += '</table></div>';
     if (S.corners.length) {

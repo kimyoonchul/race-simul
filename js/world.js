@@ -1,9 +1,9 @@
-// 서킷 월드: GPS 기준 주행선에서 트랙 리본·연석·레이싱 라인·코너 표지·주변 환경을 생성
+// 서킷 월드: 기준선(등록 서킷은 실제 지도 중심선, 그 외는 GPS 주행선)에서 트랙 리본·연석·레이싱 라인·코너 표지·주변 환경을 생성
 // 월드 좌표: X = 동쪽, Z = -북쪽, Y = 위
 (function (root) {
   'use strict';
 
-  var HW = 5.5; // 트랙 반폭(m) — 실측 폭이 아니라 GPS 주행선 기준으로 그린 표시용 폭
+  var HW0 = 5.5; // 트랙 반폭(m) 기본값 — GPS 주행선 기준으로 그릴 때의 표시용 폭. 등록 서킷은 venue.hw를 씁니다
 
   function rng(seed) { var s = seed >>> 0; return function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
   function canvasTex(THREE, w, h, draw, repeat) {
@@ -50,11 +50,30 @@
   }
 
   function build(THREE, scene, renderer, S, bestSample) {
-    var R = S.ref, NR = R.n, i, world = { hw: HW }, rootG = new THREE.Group();
+    var R = S.ref, NR = R.n, i, VN = S.venue || null, HW = VN ? VN.hw : HW0, world = { hw: HW }, rootG = new THREE.Group();
     scene.add(rootG); world.root = rootG;
     var pts = [];
     for (i = 0; i <= NR; i++) { var m = i % NR; pts.push({ x: R.x[m], z: -R.y[m], nx: R.nx[m], nz: -R.ny[m], k: R.k[m] }); }
     world.pts = pts;
+    // 구간별 반폭: 서로 다른 구간이 가까이 지나는 곳은 도로가 겹치지 않게 간격의 절반까지만 그립니다.
+    // (GPS만으로 만든 기준선은 실제보다 구간끼리 붙어 나오기도 합니다. 등록 서킷은 실제 간격이라 거의 줄지 않습니다)
+    var hwArr = new Float32Array(NR + 1), far = Math.round(70 / R.spacing), q0, q1;
+    for (q0 = 0; q0 < NR; q0 += 4) {
+      var gap2 = Infinity;
+      for (q1 = 0; q1 < NR; q1 += 4) {
+        var da = Math.abs(q0 - q1); if (Math.min(da, NR - da) < far) continue;
+        var dq = (R.x[q0] - R.x[q1]) * (R.x[q0] - R.x[q1]) + (R.y[q0] - R.y[q1]) * (R.y[q0] - R.y[q1]); if (dq < gap2) gap2 = dq;
+      }
+      var hq = Math.max(2.6, Math.min(HW, Math.sqrt(gap2) / 2 - 0.6));
+      for (q1 = 0; q1 < 4 && q0 + q1 < NR; q1++) hwArr[q0 + q1] = hq;
+    }
+    for (var sm = 0; sm < 2; sm++) { // 폭이 갑자기 바뀌지 않게 다듬되, 좁은 쪽을 넘지 않게
+      var tmpW = Float32Array.from(hwArr);
+      for (q0 = 0; q0 < NR; q0++) { var acc = 0; for (q1 = -12; q1 <= 12; q1++) acc += tmpW[((q0 + q1) % NR + NR) % NR]; hwArr[q0] = Math.min(tmpW[q0], acc / 25); }
+    }
+    hwArr[NR] = hwArr[0];
+    function hwAt(q) { return hwArr[((q % NR) + NR) % NR]; }
+    world.hwAt = hwAt;
 
     // ── 하늘·안개·조명 ───────────────────────────────────────────────
     var horizon = new THREE.Color(0xcfdfea).convertSRGBToLinear(), zenith = new THREE.Color(0x4d8fd0).convertSRGBToLinear();
@@ -107,13 +126,13 @@
       g.strokeStyle = 'rgba(15,15,17,0.35)'; g.lineWidth = 1.2;
       for (k = 0; k < 7; k++) { g.beginPath(); var x0 = r() * w; g.moveTo(x0, 0); g.bezierCurveTo(x0 + 20, h * 0.3, x0 - 20, h * 0.6, x0 + 6, h); g.stroke(); }
     }, true);
-    var verge = new THREE.Mesh(ribbon(THREE, pts, HW + 3.2, -HW - 3.2, 0.012), decalMat(THREE, { color: 0x4f6638 }, 1));
+    var verge = new THREE.Mesh(ribbon(THREE, pts, function (q) { return hwAt(q) + Math.min(3.2, hwAt(q) * 0.6); }, function (q) { return -hwAt(q) - Math.min(3.2, hwAt(q) * 0.6); }, 0.012), decalMat(THREE, { color: 0x4f6638 }, 1));
     verge.receiveShadow = true; rootG.add(verge);
-    var road = new THREE.Mesh(ribbon(THREE, pts, HW, -HW, 0.03, { uvLen: 14 }), decalMat(THREE, { map: asphalt }, 2));
+    var road = new THREE.Mesh(ribbon(THREE, pts, hwAt, function (q) { return -hwAt(q); }, 0.03, { uvLen: 14 }), decalMat(THREE, { map: asphalt }, 2));
     road.receiveShadow = true; rootG.add(road);
     var lineMat = decalMat(THREE, { color: 0xe8e8e2 }, 3);
-    rootG.add(new THREE.Mesh(ribbon(THREE, pts, HW - 0.2, HW - 0.42, 0.045), lineMat));
-    rootG.add(new THREE.Mesh(ribbon(THREE, pts, -HW + 0.2, -HW + 0.42, 0.045), lineMat));
+    rootG.add(new THREE.Mesh(ribbon(THREE, pts, function (q) { return hwAt(q) - 0.2; }, function (q) { return hwAt(q) - 0.42; }, 0.045), lineMat));
+    rootG.add(new THREE.Mesh(ribbon(THREE, pts, function (q) { return -hwAt(q) + 0.2; }, function (q) { return -hwAt(q) + 0.42; }, 0.045), lineMat));
 
     // 연석: 코너 안쪽에 빨강/흰색
     var kPos = [], kCol = [], kIdx = [], seg = Math.max(1, Math.round(2.2 / R.spacing));
@@ -121,8 +140,9 @@
       var a = Math.round(c.u0 * NR) - Math.round(8 / R.spacing), b = Math.round(c.u1 * NR) + Math.round(8 / R.spacing), side = c.dir === 'L' ? 1 : -1, q;
       if (b < a) b += NR;
       for (q = a; q < b; q += seg) {
-        var p0 = pts[((q % NR) + NR) % NR], p1 = pts[(((q + seg) % NR) + NR) % NR], red = ((q / seg) | 0) % 2 === 0, base = kPos.length / 3;
-        [[p0, HW], [p0, HW + 1.15], [p1, HW + 1.15], [p1, HW]].forEach(function (e) {
+        var p0 = pts[((q % NR) + NR) % NR], p1 = pts[(((q + seg) % NR) + NR) % NR], red = ((q / seg) | 0) % 2 === 0, base = kPos.length / 3, h0 = hwAt(q), h1 = hwAt(q + seg);
+        if (h0 < HW - 0.8) continue; // 폭을 줄인 구간은 연석을 놓을 자리가 없음
+        [[p0, h0], [p0, h0 + 1.15], [p1, h1 + 1.15], [p1, h1]].forEach(function (e) {
           kPos.push(e[0].x + e[0].nx * e[1] * side, 0.05, e[0].z + e[0].nz * e[1] * side);
           if (red) kCol.push(0.82, 0.1, 0.08); else kCol.push(0.93, 0.93, 0.9);
         });
@@ -199,8 +219,66 @@
       var m2 = new THREE.Mesh(ribbon(THREE, ap, 3.4, -3.4, 0.02), roadMat2); m2.receiveShadow = true; rootG.add(m2);
     });
     var home = S.access.length ? S.access[0][0] : [0, 0];
+    var realB = !!(VN && VN.buildings && VN.buildings.length); // 실제 건물 도형이 있으면 임시 패독·건물은 만들지 않음
     var pad = new THREE.Mesh(new THREE.CircleGeometry(46, 48), decalMat(THREE, { color: 0x45484d }, 1.2));
-    pad.rotation.x = -Math.PI / 2; pad.position.set(home[0], 0.018, -home[1]); pad.receiveShadow = true; rootG.add(pad);
+    pad.rotation.x = -Math.PI / 2; pad.position.set(home[0], 0.018, -home[1]); pad.receiveShadow = true; if (!realB) rootG.add(pad);
+
+    // ── 등록 서킷: 지도 벡터(OpenStreetMap)의 피트 레인·부속 도로·주차장·물·건물 ──
+    var blockPts = [], blockPolys = [];
+    function polyPts(a) { var o = []; for (var q = 0; q + 1 < a.length; q += 2) o.push([a[q], a[q + 1]]); return o; }
+    function lineRibbon(a, half, closed, y, mat) {
+      var pp = polyPts(a), n = pp.length, ap = [], q;
+      if (n < 2) return;
+      if (closed) pp.push(pp[0]);
+      for (q = 0; q < pp.length; q++) {
+        var a2 = closed ? pp[(q - 1 + n) % n] : pp[Math.max(0, q - 1)], b2 = closed ? pp[(q + 1) % n] : pp[Math.min(pp.length - 1, q + 1)], tx = b2[0] - a2[0], ty = b2[1] - a2[1], tl = Math.hypot(tx, ty) || 1;
+        ap.push({ x: pp[q][0], z: -pp[q][1], nx: -ty / tl, nz: -tx / tl });
+        if (q > 0) { var sx = pp[q][0] - pp[q - 1][0], sy = pp[q][1] - pp[q - 1][1], sl = Math.hypot(sx, sy), ns = Math.max(1, Math.round(sl / 7)); for (var e = 0; e < ns; e++) blockPts.push([pp[q - 1][0] + sx * e / ns, pp[q - 1][1] + sy * e / ns, half + 5]); }
+      }
+      var m3 = new THREE.Mesh(ribbon(THREE, ap, half, -half, y), mat); m3.receiveShadow = true; rootG.add(m3);
+    }
+    function flatPoly(a, y, mat) {
+      var pp = polyPts(a); if (pp.length < 3) return;
+      var sh = new THREE.Shape(); pp.forEach(function (p, q) { if (q) sh.lineTo(p[0], p[1]); else sh.moveTo(p[0], p[1]); });
+      var m3 = new THREE.Mesh(new THREE.ShapeGeometry(sh), mat); m3.rotation.x = -Math.PI / 2; m3.position.y = y; m3.receiveShadow = true; rootG.add(m3);
+      blockPolys.push(pp);
+    }
+    if (VN) {
+      var laneMat = decalMat(THREE, { color: 0x3b3d42 }, 1.8), svcMat = decalMat(THREE, { color: 0x4a4d52 }, 1.4);
+      (VN.lanes || []).forEach(function (l) { lineRibbon(l.p, Math.min(HW, 4.2), !!l.c, 0.024, laneMat); });
+      (VN.roads || []).forEach(function (rd) { lineRibbon(rd.p, rd.w / 2, false, 0.018, svcMat); });
+      (VN.pads || []).forEach(function (pd) { flatPoly(pd.p, 0.016, decalMat(THREE, { color: pd.k === 'dirt' ? 0x7a6a4f : 0x36383c }, 1.3)); });
+      (VN.parking || []).forEach(function (pk) { flatPoly(pk, 0.014, decalMat(THREE, { color: 0x53565b }, 1.2)); });
+      (VN.water || []).forEach(function (wt) { flatPoly(wt, 0.012, decalMat(THREE, { color: 0x3f6f8f }, 1.1)); });
+      // 건물: 바닥 도형을 높이만큼 세웁니다. 벽에는 층·창 무늬(가로 6m, 한 층 3.6m)
+      var winTex = canvasTex(THREE, 64, 64, function (g, w, h) {
+        g.fillStyle = '#e4e7ea'; g.fillRect(0, 0, w, h); g.fillStyle = '#26323d'; g.fillRect(6, 14, w - 12, 30); g.fillStyle = 'rgba(255,255,255,0.18)'; g.fillRect(6, 14, w - 12, 5);
+      }, true);
+      winTex.repeat.set(1 / 6, 1 / 3.6);
+      var wallM = { main: new THREE.MeshLambertMaterial({ map: winTex }), box: new THREE.MeshLambertMaterial({ color: 0xcfd3d8 }), stand: new THREE.MeshLambertMaterial({ color: 0x8b95a1 }) };
+      var roofM = { main: new THREE.MeshLambertMaterial({ color: 0xdfe3e7 }), box: new THREE.MeshLambertMaterial({ color: 0x9aa1a9 }), stand: new THREE.MeshLambertMaterial({ color: 0x5f6975 }) };
+      (VN.buildings || []).forEach(function (b) {
+        var pp = polyPts(b.p); if (pp.length < 3) return;
+        var sh = new THREE.Shape(); pp.forEach(function (p, q) { if (q) sh.lineTo(p[0], p[1]); else sh.moveTo(p[0], p[1]); });
+        var k = wallM[b.k] ? b.k : 'box';
+        var m3 = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: b.h, bevelEnabled: false }), [roofM[k], wallM[k]]);
+        m3.rotation.x = -Math.PI / 2; m3.castShadow = true; m3.receiveShadow = true; rootG.add(m3);
+        blockPolys.push(pp);
+      });
+    }
+    function blocked(x, y) { // 도로·건물·주차장·물 위에는 나무를 심지 않음
+      var q, a, b, inside;
+      for (q = 0; q < blockPts.length; q++) if (Math.hypot(blockPts[q][0] - x, blockPts[q][1] - y) < blockPts[q][2]) return true;
+      for (q = 0; q < blockPolys.length; q++) {
+        var pp = blockPolys[q]; inside = false;
+        for (a = 0, b = pp.length - 1; a < pp.length; b = a++) {
+          if ((pp[a][1] > y) !== (pp[b][1] > y) && x < (pp[b][0] - pp[a][0]) * (y - pp[a][1]) / (pp[b][1] - pp[a][1]) + pp[a][0]) inside = !inside;
+          if (Math.hypot(pp[a][0] - x, pp[a][1] - y) < 9) return true;
+        }
+        if (inside) return true;
+      }
+      return false;
+    }
     // 건물: 주행 경로에서 가장 먼 방향에 배치
     var bestDir = 0, bestD = -1, a8;
     for (a8 = 0; a8 < 16; a8++) {
@@ -214,7 +292,7 @@
     var band = new THREE.Mesh(new THREE.BoxGeometry(64.2, 4.2, 22.2), glassM); band.position.y = 3.2; bld.add(band);
     var roof = new THREE.Mesh(new THREE.BoxGeometry(70, 0.6, 27), white); roof.position.y = 9.4; bld.add(roof);
     bld.position.set(home[0] + Math.cos(bestDir) * 62, 0, -(home[1] + Math.sin(bestDir) * 62));
-    bld.rotation.y = bestDir + Math.PI / 2; rootG.add(bld);
+    bld.rotation.y = bestDir + Math.PI / 2; if (!realB) rootG.add(bld);
 
     // ── 나무(늦가을 단풍) ────────────────────────────────────────────
     var r = rng(1028), xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
@@ -223,8 +301,9 @@
     function clear(x, y, d) {
       for (var q = 0; q < NR; q += 6) if (Math.hypot(R.x[q] - x, R.y[q] - y) < d) return false;
       for (var a = 0; a < S.access.length; a++) for (var b = 0; b < S.access[a].length; b += 3) if (Math.hypot(S.access[a][b][0] - x, S.access[a][b][1] - y) < d * 0.7) return false;
-      if (Math.hypot(home[0] - x, home[1] - y) < 52) return false;
-      if (Math.hypot(bld.position.x - x, -bld.position.z - y) < 44) return false;
+      if (!realB && Math.hypot(home[0] - x, home[1] - y) < 52) return false;
+      if (!realB && Math.hypot(bld.position.x - x, -bld.position.z - y) < 44) return false;
+      if (VN && blocked(x, y)) return false;
       return true;
     }
     var spots = [], tries = 0;
@@ -255,12 +334,12 @@
       scene.remove(rootG);
       rootG.traverse(function (o) {
         if (o.geometry) o.geometry.dispose();
-        if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+        (Array.isArray(o.material) ? o.material : o.material ? [o.material] : []).forEach(function (mm) { if (mm.map) mm.map.dispose(); mm.dispose(); }); // 건물은 재질이 배열(지붕·벽)
       });
       if (scene.environment) { scene.environment.dispose(); scene.environment = null; }
     };
     return world;
   }
 
-  root.World = { build: build, HW: HW };
+  root.World = { build: build, HW: HW0 };
 })(typeof self !== 'undefined' ? self : this);

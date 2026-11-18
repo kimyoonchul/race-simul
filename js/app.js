@@ -9,7 +9,9 @@
   function damp(a, b, rate, dt) { return a + wrapPi(b - a) * (1 - Math.exp(-rate * dt)); }
 
   var S, raw, spec, renderer, scene, camera, world, car, ghost, marker, gmarker, tvCams = [];
-  var st = { t: 0, playing: true, rate: 1, cam: 'chase', ghost: true, line: true, sound: false, hud: true, car: 'z4' };
+  var st = { t: 0, playing: true, rate: 1, cam: 'chase', ghost: true, line: true, sound: false, hud: true, car: 'z4', track: 'bmw' };
+  // 기본 제공 세션(서킷). 데이터 파일이 빠져 있으면 목록에서 제외
+  var TRACKS = [{ id: 'bmw', raw: window.SESSION_RAW }, { id: 'inje', raw: window.SESSION_INJE }].filter(function (t) { return !!t.raw; });
   var cs = { yaw: 0, drag: 0, zoom: 1, oYaw: 0.9, oPitch: 0.32, oDist: 8.5, topH: 78, topYaw: 0, tv: -1, snap: true, dragging: false, lg: 0 };
   var cur = {}, gcur = {}, events = [], evPtr = 0, spin = 0, steer = 0, wall = 0, last = 0, prevGear = 0, prevThr = 0;
   // 가속 연출 상태: b 지속 세기(0..1), kick 가속을 시작하는 순간의 한 방(1에서 사그라듦), kickS 카메라용으로 다듬은 kick
@@ -97,8 +99,10 @@
   // 처리에 실패하면 예외를 던지고 기존 화면은 그대로 둡니다.
   function loadSession(newRaw, carId, keepTime) {
     var newSpec = Car.SPECS[carId] || Car.SPECS.z4;
-    var S2 = T.process(newRaw, { car: newSpec.drive });
+    // 등록 서킷(실제 지도 선형)에서 달린 기록이면 그 선형으로 보정
+    var S2 = T.process(newRaw, { car: newSpec.drive, venue: T.matchVenue ? T.matchVenue(newRaw, window.VENUES) : null });
     S = S2; raw = newRaw; spec = newSpec; st.car = newSpec.id;
+    appEl.classList.toggle('has-venue', !!S.venue);
     if (world) world.dispose();
     if (car) { scene.remove(car.group); car.dispose(); scene.remove(ghost.group); ghost.dispose(); }
     world = World.build(THREE, scene, renderer, S, bestSample);
@@ -110,14 +114,23 @@
     if (!keepTime) { var startLap = S.laps.length > 1 ? S.laps[1] : S.laps[0]; st.t = Math.max(0, startLap.t0 - 6); }
     st.t = clamp(st.t, 0, S.duration - 0.05);
     cs.tv = -1; setCam(st.cam); syncEvents(); HUD.clearBanner(); HUD.callout('');
+    placeMap(); // 차량 이름 길이에 따라 버튼 줄 배치가 달라짐
     try { localStorage.setItem('race-simul-car', spec.id); } catch (e) { /* 저장 불가 환경은 무시 */ }
     window.__replay = { st: st, S: S, seek: seek, setCam: setCam, setCar: setCar, openText: openText, cur: cur, cs: cs, fx: fxs, frame: frame, scene: scene, car: car, world: world, renderer: renderer, camera: camera, advance: function (sec) { for (var i = 0; i < sec * 30; i++) frame(1 / 30); } };
   }
   function setCar(id) { if (id !== st.car && Car.SPECS[id]) loadSession(raw, id, true); }
+  function markTrack() { var el = $('tracks'); if (el) Array.prototype.forEach.call(el.children, function (b) { b.setAttribute('aria-pressed', String(b.dataset.track === st.track)); }); }
+  function setTrack(id) {
+    var tr = TRACKS.filter(function (t) { return t.id === id; })[0];
+    if (!tr || id === st.track) return;
+    loadSession(tr.raw, st.car, false); st.track = id; markTrack(); setPlaying(true);
+    try { localStorage.setItem('race-simul-track', id); } catch (e) { /* 무시 */ }
+  }
   function openText(text, name) {
     try {
       var r = Parse.parse(text, name);
       loadSession(r, st.car, false);
+      st.track = null; markTrack(); // 내 파일: 기본 서킷 버튼은 모두 해제
       setPlaying(true);
       HUD.banner('up', '내 주행 불러옴', S.meta.venue + ' · ' + S.laps.length + '랩', name + ' — 이 브라우저 안에서만 처리했습니다', HUD.fmtLap(S.laps[S.best].time), 4600);
     } catch (e) {
@@ -138,7 +151,7 @@
     tvCams = [];
     for (i = 0; i < n; i++) {
       var m = Math.round((i + 0.5) / n * R.n) % R.n, k = R.k[m];
-      var side = Math.abs(k) > 0.004 ? (k > 0 ? -1 : 1) : (i % 2 ? 1 : -1), off = World.HW + 9 + (i % 3) * 3;
+      var side = Math.abs(k) > 0.004 ? (k > 0 ? -1 : 1) : (i % 2 ? 1 : -1), off = (world ? world.hw : World.HW) + 9 + (i % 3) * 3;
       tvCams.push(new THREE.Vector3(R.x[m] + R.nx[m] * side * off, 2.2 + (i % 4) * 1.5, -(R.y[m] + R.ny[m] * side * off)));
     }
   }
@@ -204,6 +217,14 @@
     var w = appEl.clientWidth, h = appEl.clientHeight;
     renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
     vw = w; vh = h; if (fxOn) FX.resize(w, h);
+    placeMap();
+  }
+  // 미니맵을 위쪽 버튼 줄 바로 아래에 놓습니다(폭에 따라 버튼 줄이 몇 줄로 접히는지가 달라 CSS 고정값으로는 겹침)
+  function placeMap() {
+    var mb = $('mapbox'), top = $('top'); if (!mb || !top || mb.offsetParent === null) return;
+    var ar = appEl.getBoundingClientRect(), right = mb.getBoundingClientRect().right, low = 0;
+    Array.prototype.forEach.call(top.children, function (el) { var r = el.getBoundingClientRect(); if (r.width && r.left < right) low = Math.max(low, r.bottom); });
+    if (low) mb.style.top = Math.round(low - ar.top + 8) + 'px';
   }
   function ringSprite(color) {
     var c = document.createElement('canvas'); c.width = c.height = 64; var g = c.getContext('2d');
@@ -297,6 +318,7 @@
     $('play').addEventListener('click', function () { if (!st.playing && st.t >= S.duration - 0.5) seek(0); setPlaying(!st.playing); });
     $('cams').addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) setCam(b.dataset.cam); });
     $('cars').addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) setCar(b.dataset.car); });
+    if ($('tracks')) $('tracks').addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) setTrack(b.dataset.track); });
     $('rate').addEventListener('click', function (e) {
       var b = e.target.closest('button'); if (!b) return; st.rate = +b.dataset.rate;
       Array.prototype.forEach.call($('rate').children, function (x) { x.setAttribute('aria-pressed', String(x === b)); });
@@ -381,7 +403,12 @@
     fxV = new THREE.Vector3(); fxOn = !!(window.FX && $('fxc') && FX.init($('fxc'), $('sfx')));
     reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     var saved = null; try { saved = localStorage.getItem('race-simul-car'); } catch (e) { /* 무시 */ }
-    loadSession(window.SESSION_RAW, Car.SPECS[saved] ? saved : 'z4', false);
+    var savedTrack = null; try { savedTrack = localStorage.getItem('race-simul-track'); } catch (e) { /* 무시 */ }
+    var tr0 = TRACKS.filter(function (t) { return t.id === savedTrack; })[0] || TRACKS[0];
+    st.track = tr0.id;
+    loadSession(tr0.raw, Car.SPECS[saved] ? saved : 'z4', false);
+    markTrack();
+    if ($('tracks') && TRACKS.length < 2) $('tracks').style.display = 'none';
     bindInput(); resize();
     setPlaying(!reduceMotion);
     $('loading').classList.add('done');

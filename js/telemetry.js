@@ -99,18 +99,60 @@
   var NR = 2400; // 기준선 점 수
 
   // 정류장 좌표(닫힌 곡선) → 평활된 기준선(직선은 강하게, 코너는 약하게)
+  function headingOf(xs, ys, span) {
+    var n = xs.length, h = new Float64Array(n);
+    for (var q = 0; q < n; q++) h[q] = Math.atan2(ys[(q + span) % n] - ys[(q - span + n) % n], xs[(q + span) % n] - xs[(q - span + n) % n]);
+    return h;
+  }
+  function curvatureOf(xs, ys, span, sp) {
+    var h = headingOf(xs, ys, span), n = xs.length, c = new Float64Array(n);
+    for (var q = 0; q < n; q++) c[q] = wrapPi(h[(q + span) % n] - h[(q - span + n) % n]) / (2 * span * sp);
+    return c;
+  }
+  // 균일 간격 닫힌 곡선 rs → 기준선 구조체. (sx, sy)에 가장 가까운 점이 index 0(출발선)
+  function finishRef(rs, spacing, sx, sy) {
+    var bi0 = 0, bd0 = Infinity, m;
+    for (m = 0; m < NR; m++) { var dd0 = Math.hypot(rs.x[m] - sx, rs.y[m] - sy); if (dd0 < bd0) { bd0 = dd0; bi0 = m; } }
+    var x = Float64Array.from(rs.x, function (_, q) { return rs.x[(q + bi0) % NR]; });
+    var y = Float64Array.from(rs.y, function (_, q) { return rs.y[(q + bi0) % NR]; });
+    var hd = headingOf(x, y, 2);
+    var k = boxCircular(curvatureOf(x, y, Math.max(2, Math.round(4 / spacing)), spacing), Math.round(3 / spacing));
+    var nx = new Float64Array(NR), ny = new Float64Array(NR);
+    for (m = 0; m < NR; m++) { nx[m] = -Math.sin(hd[m]); ny[m] = Math.cos(hd[m]); } // 진행방향 왼쪽
+    return { n: NR, x: x, y: y, nx: nx, ny: ny, k: k, hd: hd, len: rs.len, spacing: spacing };
+  }
+  // 실제 서킷 중심선(지도 벡터, 닫힌 폴리라인 [x0,y0,x1,y1,…])을 기준선으로. 꺾인 선을 살짝 둥글립니다.
+  function makeRefTruth(line, sx, sy, reverse) {
+    var n = line.length >> 1, xs = new Float64Array(n), ys = new Float64Array(n), m;
+    for (m = 0; m < n; m++) { var q = reverse ? n - 1 - m : m; xs[m] = line[q * 2]; ys[m] = line[q * 2 + 1]; }
+    var rs = resampleClosed(xs, ys, NR), spacing = rs.len / NR, sig = new Float64Array(NR).fill(3.5 / spacing);
+    rs = resampleClosed(gaussCircularVar(rs.x, sig), gaussCircularVar(rs.y, sig), NR); spacing = rs.len / NR;
+    return finishRef(rs, spacing, sx, sy);
+  }
+  // 세션 원점(meta.lat0/lon0)에서 가까운 등록 서킷을 찾아, 그 지도 도형을 세션 지역 좌표(m)로 옮겨 돌려줍니다.
+  function matchVenue(raw, list) {
+    var mt = raw && raw.meta;
+    if (!mt || !isFinite(mt.lat0) || !isFinite(mt.lon0) || !list) return null;
+    var mLon = 111320 * Math.cos(mt.lat0 * Math.PI / 180), mLat = 110574;
+    for (var i = 0; i < list.length; i++) {
+      var vn = list[i], dx = (vn.lon - mt.lon0) * mLon, dy = (vn.lat - mt.lat0) * mLat;
+      if (Math.hypot(dx, dy) > 3000) continue;
+      var sh = function (a) { var o = new Array(a.length); for (var q = 0; q < a.length; q += 2) { o[q] = a[q] + dx; o[q + 1] = a[q + 1] + dy; } return o; };
+      var polys = function (a) { return (a || []).map(sh); };
+      return {
+        id: vn.id, name: vn.name, hw: vn.hw, credit: vn.credit, line: sh(vn.line),
+        lanes: (vn.lanes || []).map(function (l) { return { c: l.c, p: sh(l.p) }; }),
+        roads: (vn.roads || []).map(function (r) { return { w: r.w, p: sh(r.p) }; }),
+        pads: (vn.pads || []).map(function (pd) { return { k: pd.k, p: sh(pd.p) }; }),
+        water: polys(vn.water), parking: polys(vn.parking),
+        buildings: (vn.buildings || []).map(function (b) { return { h: b.h, k: b.k, p: sh(b.p) }; }),
+      };
+    }
+    return null;
+  }
+
   function makeRef(stX, stY) {
     var rs = resampleClosed(stX, stY, NR), spacing = rs.len / NR, m, pass;
-    function headingOf(xs, ys, span) {
-      var n = xs.length, h = new Float64Array(n);
-      for (var q = 0; q < n; q++) h[q] = Math.atan2(ys[(q + span) % n] - ys[(q - span + n) % n], xs[(q + span) % n] - xs[(q - span + n) % n]);
-      return h;
-    }
-    function curvatureOf(xs, ys, span, sp) {
-      var h = headingOf(xs, ys, span), n = xs.length, c = new Float64Array(n);
-      for (var q = 0; q < n; q++) c[q] = wrapPi(h[(q + span) % n] - h[(q - span + n) % n]) / (2 * span * sp);
-      return c;
-    }
     var sig = new Float64Array(NR);
     for (pass = 0; pass < 2; pass++) {
       var sig0 = new Float64Array(NR).fill(20 / spacing);
@@ -120,16 +162,7 @@
       sig = boxCircular(sig, Math.round(10 / spacing));
       rs = resampleClosed(gaussCircularVar(rs.x, sig), gaussCircularVar(rs.y, sig), NR); spacing = rs.len / NR;
     }
-    // 출발선이 index 0에 오도록 회전
-    var bi0 = 0, bd0 = Infinity;
-    for (m = 0; m < NR; m++) { var dd0 = Math.hypot(rs.x[m] - stX[0], rs.y[m] - stY[0]); if (dd0 < bd0) { bd0 = dd0; bi0 = m; } }
-    var x = Float64Array.from(rs.x, function (_, q) { return rs.x[(q + bi0) % NR]; });
-    var y = Float64Array.from(rs.y, function (_, q) { return rs.y[(q + bi0) % NR]; });
-    var hd = headingOf(x, y, 2);
-    var k = boxCircular(curvatureOf(x, y, Math.max(2, Math.round(4 / spacing)), spacing), Math.round(3 / spacing));
-    var nx = new Float64Array(NR), ny = new Float64Array(NR);
-    for (m = 0; m < NR; m++) { nx[m] = -Math.sin(hd[m]); ny[m] = Math.cos(hd[m]); } // 진행방향 왼쪽
-    return { n: NR, x: x, y: y, nx: nx, ny: ny, k: k, hd: hd, len: rs.len, spacing: spacing };
+    return finishRef(rs, spacing, stX[0], stY[0]); // 출발선이 index 0에 오도록 회전
   }
   // idx 근처 ±r점에서 가장 가까운 기준선 점
   function nearestIdx(ref, x, y, c, r) {
@@ -182,6 +215,13 @@
     }
 
     var xS = centralSlopes(X), yS = centralSlopes(Y);
+    // GPS 끊김: 기록기가 두 수신점 사이를 직선·등간격으로 메운 초(이동 벡터가 3초 이상 똑같음). 이 초의 위치는 믿지 않습니다.
+    var interp = new Uint8Array(N), run = 0;
+    for (i = 2; i <= N; i++) {
+      var same = i < N && Math.hypot(X[i] - X[i - 1], Y[i] - Y[i - 1]) > 2 && Math.hypot(X[i] - 2 * X[i - 1] + X[i - 2], Y[i] - 2 * Y[i - 1] + Y[i - 2]) < 0.35;
+      if (same) run++;
+      else { if (run >= 2) for (j = i - 1 - run; j < i - 1; j++) interp[j] = 1; run = 0; }
+    }
     function rawPos(t) {
       var a = clamp(Math.floor(t), 0, N - 2), f = clamp(t - a, 0, 1);
       return [hermite(X[a], X[a + 1], xS[a], xS[a + 1], f), hermite(Y[a], Y[a + 1], yS[a], yS[a + 1], f)];
@@ -226,34 +266,76 @@
       cross = gateCrossings(sf);
     }
     if (cross.length < 2) throw new Error('랩을 찾지 못했습니다. 스타트/피니시를 두 번 이상 통과한 기록이 필요합니다.');
-    var laps = [];
+    // estCross: 기록기가 놓친 통과를 위치로 되살린 시각(아래 '통과 누락 복구'). 그 시각에 걸친 랩은 추정 랩(est)
+    var laps = [], estT = raw.estCross || [];
+    function isEst(t) { for (var q = 0; q < estT.length; q++) if (Math.abs(estT[q] - t) < 1e-6) return true; return false; }
     for (j = 0; j + 1 < cross.length; j++) {
-      laps.push({ n: j + 1, t0: cross[j], t1: cross[j + 1], time: cross[j + 1] - cross[j], spdLen: distAt(cross[j + 1]) - distAt(cross[j]), spd0: distAt(cross[j]) });
+      laps.push({ n: j + 1, t0: cross[j], t1: cross[j + 1], time: cross[j + 1] - cross[j], spdLen: distAt(cross[j + 1]) - distAt(cross[j]), spd0: distAt(cross[j]), est: isEst(cross[j]) || isEst(cross[j + 1]) });
     }
-    var bestTime = Math.min.apply(null, laps.map(function (l) { return l.time; }));
-    var best = laps.findIndex(function (l) { return l.time === bestTime; });
+    var timed = laps.filter(function (l) { return !l.est; }); if (!timed.length) timed = laps;
+    var bestTime = Math.min.apply(null, timed.map(function (l) { return l.time; }));
+    var best = laps.indexOf(timed.filter(function (l) { return l.time === bestTime; })[0]);
     var first = laps[0], last = laps[laps.length - 1];
+    // 여러 바퀴가 한 랩으로 묶인 구간(통과 누락)은 기준선·거리 보정 계산에서 뺍니다
+    var medLen = median(laps.map(function (l) { return l.spdLen; }));
+    var okLaps = laps.filter(function (l) { return l.spdLen < medLen * 1.5 && l.spdLen > medLen * 0.5; }); if (!okLaps.length) okLaps = laps;
+    var sfX = median(cross.map(function (t) { return rawPos(t)[0]; })), sfY = median(cross.map(function (t) { return rawPos(t)[1]; }));
 
     // ── 3. 기준 주행선 ────────────────────────────────────────────────
-    // 1차: 속도 드롭아웃이 적은(적분거리가 긴) 랩들을 진행률로 겹쳐 위치 중앙값
-    var maxLen = Math.max.apply(null, laps.map(function (l) { return l.spdLen; }));
-    var clean = laps.filter(function (l) { return l.spdLen >= maxLen * 0.97; });
-    var NS = 2000, stX = new Float64Array(NS), stY = new Float64Array(NS);
-    var bufX = new Float64Array(clean.length), bufY = new Float64Array(clean.length);
-    for (m = 0; m < NS; m++) {
-      for (j = 0; j < clean.length; j++) {
-        var p = rawPos(timeAtDist(clean[j].spd0 + (m / NS) * clean[j].spdLen));
-        bufX[j] = p[0]; bufY[j] = p[1];
+    var maxLen = Math.max.apply(null, okLaps.map(function (l) { return l.spdLen; }));
+    var clean = okLaps.filter(function (l) { return l.spdLen >= maxLen * 0.97; });
+    var ref, venue = opts.venue && opts.venue.line && opts.venue.line.length >= 80 ? opts.venue : null, gpsBias = [0, 0];
+    if (venue) {
+      // 등록 서킷: 실제 지도 중심선이 기준선. GPS 궤적으로 진행 방향을 판별하고, GPS의 일정한 치우침(평균 벡터)을 빼 줍니다.
+      ref = makeRefTruth(venue.line, sfX, sfY, false);
+      var qa = Math.ceil(first.t0), qb = Math.floor(last.t1), q0, pi = -1, dirSum = 0, dev = [];
+      for (q0 = qa; q0 <= qb; q0++) {
+        if (V[q0] < 8) { pi = -1; continue; }
+        var ni = nearestIdx(ref, X[q0], Y[q0], 0, NR / 2);
+        dev.push(Math.hypot(X[q0] - ref.x[ni], Y[q0] - ref.y[ni]));
+        if (pi >= 0) { var di = ((ni - pi + NR + NR / 2) % NR) - NR / 2; if (Math.abs(di) < NR / 8) dirSum += di; }
+        pi = ni;
       }
-      stX[m] = median(bufX); stY[m] = median(bufY);
+      if (!dev.length || median(dev) > 30) venue = null; // 이 서킷의 주행이 아님 → GPS만으로 처리
+      else {
+        var rev = dirSum < 0;
+        if (rev) ref = makeRefTruth(venue.line, sfX, sfY, true);
+        for (var pass2 = 0; pass2 < 2; pass2++) {
+          var bx = 0, by = 0, bn = 0;
+          for (q0 = qa; q0 <= qb; q0++) {
+            if (V[q0] < 8) continue;
+            var nj = nearestIdx(ref, X[q0], Y[q0], 0, NR / 2), ex = X[q0] - ref.x[nj], ey = Y[q0] - ref.y[nj];
+            if (ex * ex + ey * ey < 625) { bx += ex; by += ey; bn++; }
+          }
+          if (bn < 20) break;
+          bx = clamp(bx / bn, -12, 12); by = clamp(by / bn, -12, 12);
+          for (q0 = 0; q0 < N; q0++) { X[q0] -= bx; Y[q0] -= by; }
+          gpsBias[0] += bx; gpsBias[1] += by;
+        }
+        // 출발선: 게이트가 있으면 그 실제 좌표, 없으면 통과 지점(치우침 보정 후)
+        var g0 = sf ? gateFrame(sf) : null;
+        ref = makeRefTruth(venue.line, g0 ? g0.x : sfX - gpsBias[0], g0 ? g0.y : sfY - gpsBias[1], rev);
+      }
     }
-    var ref = makeRef(boxCircular(stX, 3), boxCircular(stY, 3));
+    if (!venue) {
+      // 1차: 속도 드롭아웃이 적은(적분거리가 긴) 랩들을 진행률로 겹쳐 위치 중앙값
+      var NS = 2000, stX = new Float64Array(NS), stY = new Float64Array(NS);
+      var bufX = new Float64Array(clean.length), bufY = new Float64Array(clean.length);
+      for (m = 0; m < NS; m++) {
+        for (j = 0; j < clean.length; j++) {
+          var p = rawPos(timeAtDist(clean[j].spd0 + (m / NS) * clean[j].spdLen));
+          bufX[j] = p[0]; bufY[j] = p[1];
+        }
+        stX[m] = median(bufX); stY[m] = median(bufY);
+      }
+      ref = makeRef(boxCircular(stX, 3), boxCircular(stY, 3));
+    }
 
     // 1Hz 실측점을 기준선에 순차 투영: 호길이 위치 sPos(누적 m), 횡편차 latRaw
     var iFirst = Math.ceil(first.t0), iLast = Math.floor(last.t1), iJoin, iExit;
     var sPos = new Float64Array(N), latRaw = new Float64Array(N);
     function track() {
-      var win = Math.round(45 / ref.spacing), idx, s, q, step, nidx, d, misses;
+      var win = Math.round(45 / ref.spacing), idx, s, q, step, nidx, d, misses, offLim = venue ? 55 : 13, missLim = venue ? 4 : 2; // 실제 중심선 기준이면 피트 레인까지는 트랙으로 보고, GPS가 튀는 초는 넉넉히 넘김
       function at(q2, c) {
         nidx = nearestIdx(ref, X[q2], Y[q2], c, win);
         d = (X[q2] - ref.x[nidx]) * ref.nx[nidx] + (Y[q2] - ref.y[nidx]) * ref.ny[nidx];
@@ -272,7 +354,7 @@
         step = ((nidx - (((c % NR) + NR) % NR) + NR + NR / 2) % NR) - NR / 2;
         sPos[q] = Math.max(sPos[q - 1], (c + step) * ref.spacing);
         latRaw[q] = d;
-        if (q > iLast) { if (off > 13) { misses++; if (misses >= 2) { iExit = q - 2; break; } } else misses = 0; }
+        if (q > iLast && !interp[q]) { if (off > offLim) { misses++; if (misses >= missLim) { iExit = q - missLim; break; } } else misses = 0; }
       }
       misses = 0; iJoin = 0;
       for (q = iFirst - 1; q >= 0; q--) { // 후진
@@ -282,12 +364,13 @@
         step = ((nidx - (((c2 % NR) + NR) % NR) + NR + NR / 2) % NR) - NR / 2;
         sPos[q] = Math.min(sPos[q + 1], (c2 + step) * ref.spacing);
         latRaw[q] = d;
-        if (off2 > 13) { misses++; if (misses >= 2) { iJoin = q + 2; break; } } else misses = 0;
+        if (!interp[q]) { if (off2 > offLim) { misses++; if (misses >= missLim) { iJoin = q + missLim; break; } } else misses = 0; }
       }
     }
     track();
 
-    // 2차: 전 랩의 횡편차 중앙값만큼 기준선을 옮겨 다듬기(느린 랩은 GPS 지연이 적어 더 정확)
+    // 2차: 전 랩의 횡편차 중앙값만큼 기준선을 옮겨 다듬기(느린 랩은 GPS 지연이 적어 더 정확). 실제 중심선을 쓸 때는 건너뜀
+    if (!venue) {
     var binM = 16, nb = Math.round(ref.len / binM), bins = [];
     for (m = 0; m < nb; m++) bins.push([]);
     for (i = iFirst; i <= iLast; i++) {
@@ -304,6 +387,28 @@
     }
     ref = makeRef(sx2, sy2);
     track();
+    }
+
+    // 통과 누락 복구: GPS가 끊겨 기록기가 출발선 통과를 놓치면 두 바퀴가 한 랩이 됩니다.
+    // 기준선 위 진행 거리가 두 바퀴 이상인 랩은 바퀴 수로 나눈 지점의 시각을 통과로 넣고 처음부터 다시 처리합니다(그 랩은 추정 랩).
+    if (!opts._relap) {
+      var addCross = [];
+      laps.forEach(function (l) {
+        var ia = Math.round(l.t0), ib = Math.round(l.t1), loops = Math.round((sPos[ib] - sPos[ia]) / ref.len);
+        for (var c = 1; c < loops; c++) {
+          var target = sPos[ia] + (sPos[ib] - sPos[ia]) * c / loops, q = ia;
+          while (q < ib - 1 && sPos[q + 1] < target) q++;
+          addCross.push(q + (target - sPos[q]) / Math.max(1e-6, sPos[q + 1] - sPos[q]));
+        }
+      });
+      if (addCross.length) {
+        var raw2 = {}, opts2 = {}, key;
+        for (key in raw) raw2[key] = raw[key];
+        for (key in opts) opts2[key] = opts[key];
+        raw2.crossings = cross.concat(addCross).sort(function (a, b) { return a - b; }); raw2.estCross = addCross; opts2._relap = true;
+        return process(raw2, opts2);
+      }
+    }
 
     // ── 4. 속도 적분과 위치 투영의 융합 ───────────────────────────────
     // 고주파는 속도 적분, 저주파(드리프트·드롭아웃)는 위치 투영을 따릅니다.
@@ -323,7 +428,10 @@
     vf = box(vf, 5);
     // 표시 속도는 GPS 실측 속도를 그대로 두고, 융합 결과가 뚜렷이 더 빠른 구간(드롭아웃)만 끌어올림
     var repaired = 0, vShow = new Float64Array(M);
-    for (k = 0; k < M; k++) vShow[k] = v[k] + Math.max(0, vf[k] - v[k] - Math.max(2.5, 0.12 * v[k]));
+    // 끌어올린 속도는 앞뒤 6초 안에서 GPS가 실제로 잰 최고 속도를 넘지 않게(끊김 뒤 위치가 한꺼번에 따라붙으며 생기는 가짜 최고속 방지)
+    var vLoc = new Float64Array(N);
+    for (i = 0; i < N; i++) { var mxv = 0; for (j = Math.max(0, i - 6); j <= Math.min(N - 1, i + 6); j++) if (V[j] > mxv) mxv = V[j]; vLoc[i] = mxv; }
+    for (k = 0; k < M; k++) { var vfc = Math.min(vf[k], vLoc[Math.min(N - 1, Math.round(k / HZ))]); vShow[k] = v[k] + Math.max(0, vfc - v[k] - Math.max(2.5, 0.12 * v[k])); }
     vShow = box(vShow, 3);
     for (k = 0; k < M; k++) { if (k % HZ === 0 && vShow[k] - raw.v[k / HZ] / 3.6 > 2.5) repaired++; v[k] = vShow[k]; }
     dist = fused;
@@ -486,7 +594,7 @@
     var runBest = Infinity, runSec = []; for (j = 0; j < nSec; j++) runSec.push(Infinity);
     laps.forEach(function (l, idx) {
       l.prevBest = runBest === Infinity ? null : runBest;
-      l.newBest = l.time < runBest;
+      l.newBest = !l.est && l.time < runBest; // 통과 시각을 추정한 랩은 기록 갱신으로 치지 않음
       if (l.newBest) runBest = l.time;
       l.sectorFlag = l.sectors.map(function (s, si) {
         var flag = s < runSec[si] ? 'best' : (idx > 0 && s < laps[idx - 1].sectors[si] ? 'up' : 'down');
@@ -576,8 +684,9 @@
       ref: ref, lapMeters: lapMeters, access: access, tJoin: kJoin / HZ, tExit: kExit / HZ,
       topSpeed: vmaxAll * 3.6, tTop: kTop / HZ, meta: raw.meta, cleanLapCount: clean.length,
       repairedSeconds: repaired, scale: scale, corners: corners, stats: stats,
+      venue: venue, gpsBias: gpsBias, // venue: 실제 지도 선형으로 보정한 등록 서킷(없으면 null)
     };
   }
 
-  return { process: process, CAR: CAR, HZ: HZ, G: G };
+  return { process: process, matchVenue: matchVenue, CAR: CAR, HZ: HZ, G: G };
 });

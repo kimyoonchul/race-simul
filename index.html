@@ -73,8 +73,11 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--ice); 
 .seg button[aria-pressed="true"]:hover, .tog[aria-pressed="true"]:hover { color: var(--ink); }
 .toggles { display: flex; gap: 6px; }
 
-#cars { margin-top: 8px; }
-#cars button { padding: 4px 9px; font-size: 13px; }
+#cars, #tracks { margin-top: 8px; display: inline-flex; vertical-align: top; }
+#tracks { margin-left: 8px; }
+#cars button, #tracks button { padding: 4px 9px; font-size: 13px; }
+#mapcred { display: none; margin-top: 4px; font-size: 9px; letter-spacing: 0.02em; color: var(--dim); white-space: nowrap; }
+.has-venue #mapcred { display: block; }
 
 /* ── 미니맵 ── */
 #mapbox { position: absolute; left: var(--gutter-l); top: 128px; width: 164px; padding: 8px; }
@@ -291,10 +294,10 @@ kbd { font-family: var(--num); font-size: 13px; border: 1px solid var(--line); p
   #main { min-width: 0; } #speed { font-size: 74px; } #speed small { font-size: 14px; } #laptime { font-size: 28px; } #delta { font-size: 18px; min-width: 52px; } #lapno { display: none; }
   .reg { width: 44px; } #chrono { display: none; }
   #sectors span { min-width: 46px; padding: 1px 5px; font-size: 12px; } #shift i { width: 9px; }
-  #trace { display: none; } #mapbox { width: 92px; padding: 5px; top: 168px; }
+  #trace { display: none; } #mapbox { width: 92px; padding: 5px; top: 208px; }
   #speedo { width: 112px; } #spd2 { font-size: 40px; top: 26px; } #spd2u { display: none; } #speedo text { display: none; } [data-cluster="m340i"] #laptime { font-size: 30px; } [data-cluster="m340i"] #pedalblk { display: none; }
   [data-cluster="stinger"] #tach { width: 150px; } [data-cluster="stinger"] #spdIn { font-size: 48px; top: 38px; } [data-cluster="stinger"] #gear { top: 92px; font-size: 20px; } [data-cluster="stinger"] #laptime { font-size: 30px; }
-  #cars button { padding: 3px 6px; font-size: 12px; }
+  #cars button, #tracks button { padding: 3px 6px; font-size: 12px; } #tracks { display: flex; width: max-content; margin-left: 0; margin-top: 5px; } #mapcred { display: none !important; }
   #banner { top: 46%; } #pedalblk > .label, #tach > .label, #speedo > .label { display: none; } #callout { font-size: 12px; } #callout b { font-size: 15px; }
   .seg button, .tog { padding: 6px 8px; font-size: 13px; } #top { gap: 8px; } .bn .big { font-size: 40px; } .bn { padding: 10px 14px 12px; column-gap: 10px; } .bn .t { font-size: 14px; }
   #rate button:not([aria-pressed="true"]) { display: none; } .venue { font-size: 11px; letter-spacing: 0.1em; }
@@ -318,6 +321,8 @@ kbd { font-family: var(--num); font-size: 13px; border: 1px solid var(--line); p
         <div class="venue"><span id="venue">BMW DRIVING CENTER</span> · <span id="date"></span></div>
         <div class="seg" id="cars" role="group" aria-label="차량 선택">
           <button data-car="z4" aria-pressed="true">Z4 M40i</button><button data-car="m340i" aria-pressed="false">M340i Touring</button><button data-car="stinger" aria-pressed="false">Stinger 3.3T</button>
+        </div><div class="seg" id="tracks" role="group" aria-label="서킷 선택">
+          <button data-track="bmw" aria-pressed="true" title="BMW 드라이빙 센터 (2026-10-28)">BMW</button><button data-track="inje" aria-pressed="false" title="인제 스피디움 풀코스 (2025-08-27)">인제</button>
         </div>
       </div>
       <div id="lapkind">PUSH</div>
@@ -337,6 +342,7 @@ kbd { font-family: var(--num); font-size: 13px; border: 1px solid var(--line); p
     <div id="mapbox" class="panel">
       <canvas id="minimap" width="296" height="560"></canvas>
       <div id="callout"></div>
+      <div id="mapcred">지도 © OpenStreetMap</div>
     </div>
 
     <div id="lapsbox" class="panel">
@@ -440,7 +446,11 @@ kbd { font-family: var(--num); font-size: 13px; border: 1px solid var(--line); p
       <li>섹터·코너 번호(C1…)는 GPS 주행선에서 자동 검출한 것이라 공식 코너 번호와 다릅니다.</li>
     </ul>
     <h3>보정</h3>
-    <ul><li>트랙 모양은 빠른 랩들의 GPS 궤적을 겹쳐 만든 주행선이며 폭은 표시용입니다. GPS 속도가 순간적으로 끊긴 구간(<span id="repairN"></span>초)은 위치 기록으로 메웠습니다.</li></ul>
+    <ul>
+      <li>BMW 드라이빙 센터와 인제 스피디움은 OpenStreetMap에 등록된 실제 서킷 중심선으로 트랙을 그리고, GPS 위치를 그 선형 위로 옮겨 보정합니다. 피트 레인·부속 도로·건물도 같은 지도의 도형입니다(높이는 층수 표기나 면적으로 정한 값). 지도 데이터 © OpenStreetMap contributors.</li>
+      <li>그 밖의 서킷은 빠른 랩들의 GPS 궤적을 겹쳐 만든 주행선으로 그리며 폭은 표시용입니다. 서로 다른 구간이 가까운 곳은 도로가 겹치지 않게 폭을 줄여 그립니다.</li>
+      <li>GPS 속도가 순간적으로 끊긴 구간(<span id="repairN"></span>초)은 위치 기록으로 메웠습니다. GPS가 끊겨 기록기가 출발선 통과를 놓친 랩은 위치로 통과 시각을 되살리고 ≈ 표시를 붙였으며, 베스트 판정에서 뺍니다.</li>
+    </ul>
   </div></div>
   <div id="drop" hidden><div>VBO · CSV 파일을 여기에 놓으세요<small>파일은 이 브라우저 안에서만 읽습니다</small></div></div>
   <input type="file" id="file" accept=".vbo,.csv,.txt" hidden>
@@ -448,14 +458,16 @@ kbd { font-family: var(--num); font-size: 13px; border: 1px solid var(--line); p
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="data/session.js"></script>
-<script src="js/telemetry.js?v=10"></script>
-<script src="js/parse.js?v=10"></script>
-<script src="js/car.js?v=10"></script>
-<script src="js/world.js?v=10"></script>
-<script src="js/audio.js?v=10"></script>
-<script src="js/hud.js?v=10"></script>
-<script src="js/fx.js?v=10"></script>
-<script src="js/app.js?v=10"></script>
+<script src="data/session.js?v=11"></script>
+<script src="data/session-inje.js?v=11"></script>
+<script src="data/venues.js?v=11"></script>
+<script src="js/telemetry.js?v=11"></script>
+<script src="js/parse.js?v=11"></script>
+<script src="js/car.js?v=11"></script>
+<script src="js/world.js?v=11"></script>
+<script src="js/audio.js?v=11"></script>
+<script src="js/hud.js?v=11"></script>
+<script src="js/fx.js?v=11"></script>
+<script src="js/app.js?v=11"></script>
 </body>
 </html>

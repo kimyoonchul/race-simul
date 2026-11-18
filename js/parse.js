@@ -29,6 +29,7 @@
     }
     var out = { meta: meta, x: x, y: y, v: v, gates: [] };
     out.meta.samples = n;
+    out.meta.lat0 = +lat0.toFixed(7); out.meta.lon0 = +lon0.toFixed(7); // 지역 좌표 원점(실제 지도 선형과 맞출 때 사용)
     (gatesLL || []).forEach(function (g) {
       out.gates.push({ kind: g.kind, x: r2((g.lon - lon0) * mLon), y: r2((g.lat - lat0) * mLat), x2: r2((g.lon2 - lon0) * mLon), y2: r2((g.lat2 - lat0) * mLat) });
     });
@@ -76,9 +77,10 @@
   }
 
   function parseRaceChronoCsv(text, name) {
-    var lines = text.split(/\r?\n/), h = -1, i, title = null;
+    var lines = text.split(/\r?\n/), h = -1, i, title = null, trackName = null;
     for (i = 0; i < Math.min(lines.length, 40); i++) {
       if (/^Session title,/.test(lines[i])) title = splitCsv(lines[i])[1];
+      if (/^Track name,/.test(lines[i])) trackName = splitCsv(lines[i])[1];
       if (/^timestamp,/.test(lines[i])) { h = i; break; }
     }
     if (h < 0) return null;
@@ -92,7 +94,7 @@
       rows.push({ t: t, lat: +p[iLat], lon: +p[iLon], v: +p[iV] * 3.6 });
       if (iLap >= 0 && p[iLap] !== '' && p[iLap] !== lastLap) { cross.push(t); lastLap = p[iLap]; }
     }
-    return finalize(rows, { venue: title || (name || 'Session').replace(/\.[^.]+$/, ''), startUtc: rows.length ? new Date(Math.ceil(rows[0].t) * 1000).toISOString().replace('.000', '') : null, source: 'RaceChrono CSV' }, null, cross);
+    return finalize(rows, { venue: trackName || title || (name || 'Session').replace(/\.[^.]+$/, ''), startUtc: rows.length ? new Date(Math.ceil(rows[0].t) * 1000).toISOString().replace('.000', '') : null, source: 'RaceChrono CSV' }, null, cross);
   }
 
   function parseGenericCsv(text, name) {
