@@ -150,7 +150,9 @@
     cs.lg = snap ? lgT : cs.lg + (lgT - cs.lg) * (1 - Math.exp(-3.2 * dt));
     var pos = Math.max(0, cs.lg), dive = Math.min(0, cs.lg);
     // 가속 흔들림: 세기에 비례하고, 가속을 시작하는 순간 크게 한 번 흔들립니다
-    var shA = reduceMotion ? 0 : fxs.b * 0.07 + fxs.kick * 0.22 + fxs.bk * 0.16;
+    // shA는 카메라 위치(m), shR은 시선 각도(rad). 시선까지 흔들어야 화면 전체가 흔들립니다.
+    // 위치만 흔들면 lookAt이 반대로 돌아 상쇄되므로 시선은 같은 방향(음수)으로 더 돌립니다
+    var shA = reduceMotion ? 0 : fxs.b * 0.07 + fxs.kick * 0.22 + fxs.bk * 0.16, shR = reduceMotion ? 0 : fxs.b * 0.004 + fxs.kick * 0.014 + fxs.bk * 0.01;
     var n1 = Math.sin(wall * 52.3) * 0.6 + Math.sin(wall * 87.1 + 1.7) * 0.4, n2 = Math.sin(wall * 61.7 + 0.9) * 0.6 + Math.sin(wall * 97.3 + 2.3) * 0.4, n3 = Math.sin(wall * 44.9 + 0.4);
     if (st.cam === 'chase') {
       cs.yaw = snap ? h : damp(cs.yaw, h, 4.2, dt);
@@ -160,14 +162,14 @@
       camera.position.set(px - Math.cos(yaw) * back - Math.sin(yaw) * shA * n1, ht + shA * 0.7 * n2, pz + Math.sin(yaw) * back - Math.cos(yaw) * shA * n1);
       // 감속으로 카메라가 붙을 때 차가 계기판 뒤로 내려가지 않도록 시선을 차 쪽으로 당깁니다
       camera.lookAt(px + fx * (2.6 + dive * 2.0), 0.8 + dive * 0.45, pz + fz * (2.6 + dive * 2.0));
-      camera.rotateZ(shA * 0.09 * n3);
+      camera.rotateX(-shR * n2); camera.rotateY(-shR * n1); camera.rotateZ(shA * 0.09 * n3);
       fov = 55 + Math.min(21, cur.v * 0.37) + dive * 5 + pos * 13 + fxs.kickS * 9;
     } else if (st.cam === 'onboard') {
       var e = spec.eye, lx = -Math.sin(h), lz = -Math.cos(h), shake = cur.v * 0.00012, shO = shA * 0.25;
       var eyeX = e[0] - cs.lg * 0.05; // 감속하면 몸이 앞으로 쏠림
       camera.position.set(px + fx * eyeX + lx * (e[2] + shO * n1), e[1] + Math.sin(wall * 41) * shake + shO * n2, pz + fz * eyeX + lz * (e[2] + shO * n1));
       camera.lookAt(px + fx * 40 + lx * (e[2] + cur.aLat * 5), 0.9 + cs.lg * 0.7, pz + fz * 40 + lz * (e[2] + cur.aLat * 5));
-      camera.rotateZ(-cur.aLat * 0.035 + shA * 0.07 * n3);
+      camera.rotateX(-shR * 2.5 * n2); camera.rotateY(-shR * 2.5 * n1); camera.rotateZ(-cur.aLat * 0.035 + shA * 0.07 * n3);
       fov = 68 + Math.min(10, cur.v * 0.16) + dive * 5 + pos * 11 + fxs.kickS * 8;
     } else if (st.cam === 'tv') {
       var ax = px + fx * 22, az = pz + fz * 22, bi = 0, bd = Infinity, i;
@@ -228,12 +230,12 @@
 
     // 가속 연출 세기: 속도가 늘어나는 정도(종가속도)를 따르고, 고속에서 전개 중이면 절반까지 유지합니다.
     // 감속·정지·일시정지·빨리감기에서는 0. 가속을 막 시작하는 순간에만 kick이 한 번 터집니다.
-    var bT = st.playing && st.rate <= 2 ? Math.max(clamp((cur.aLong - 0.12) / 0.45, 0, 1), cur.aLong > 0.04 ? 0.5 * clamp((cur.thr - 0.55) / 0.4, 0, 1) : 0) : 0;
     var fxLive = st.playing && st.rate <= 2;
-    if (cs.snap) { fxs.b = bT; fxs.kick = fxs.kickS = fxs.bk = 0; fxs.armed = bT < 0.08; fxs.brkArmed = cur.aLong > -0.15; if (fxOn) FX.clearPops(); }
+    var bRaw = Math.max(clamp((cur.aLong - 0.12) / 0.45, 0, 1), cur.aLong > 0.04 ? 0.5 * clamp((cur.thr - 0.55) / 0.4, 0, 1) : 0), bT = fxLive ? bRaw : 0;
+    if (cs.snap) { fxs.b = bT; fxs.kick = fxs.kickS = fxs.bk = 0; fxs.armed = bRaw < 0.08; fxs.brkArmed = cur.aLong > -0.15; if (fxOn) FX.clearPops(); }
     else {
       fxs.b += (bT - fxs.b) * (1 - Math.exp(-(bT > fxs.b ? 7 : 4) * dt));
-      if (bT > 0.4 && fxs.armed) { fxs.kick = 1; fxs.armed = false; sfxPop('acc', cur.v < 21 ? '부아앙~' : '부웅~'); } else if (bT < 0.08) fxs.armed = true;
+      if (bT > 0.4 && fxs.armed) { fxs.kick = 1; fxs.armed = false; sfxPop('acc', cur.v < 21 ? '부아앙~' : '부웅~'); } else if (bRaw < 0.08) fxs.armed = true; // 일시정지했다 이어 재생할 때 다시 터지지 않도록 실제 가속 여부로 판단
       // 강한 제동(0.4g 이상)을 시작하는 순간: 끼익~ 글자와 짧은 흔들림
       if (fxLive && cur.aLong < -0.4 && fxs.brkArmed) { fxs.bk = 1; fxs.brkArmed = false; sfxPop('brk', cur.v > 42 ? '끼이익~' : '끼익~'); } else if (cur.aLong > -0.15) fxs.brkArmed = true;
       fxs.kick *= Math.exp(-3.2 * dt); fxs.bk *= Math.exp(-5 * dt);
