@@ -286,9 +286,9 @@
     h += stat(fmtLap(st.theoretical), '', '이론 베스트 (섹터 최고 합)');
     h += stat(S.topSpeed.toFixed(0), 'km/h', '최고 속도 (GPS)');
     h += stat('±' + st.consistency.toFixed(2), 's', '푸시 랩 ' + st.pushCount + '개 편차 (평균 ' + fmtLap(st.pushMean) + ')');
-    h += stat(st.maxLatG.toFixed(2), 'g', '최대 횡가속 · 추정');
-    h += stat(st.maxBrakeG.toFixed(2), 'g', '최대 감속 · 추정');
-    h += stat(st.maxBrakeT.toFixed(0), '°C', '디스크 최고 온도 · 열모델 추정');
+    h += stat(st.maxLatG.toFixed(2), 'g', '최대 횡가속');
+    h += stat(st.maxBrakeG.toFixed(2), 'g', '최대 감속');
+    h += stat(st.maxBrakeT.toFixed(0), '°C', '디스크 최고 온도');
     h += '</div><h3>LAPS</h3><div class="tblwrap"><table class="ct"><tr><th>LAP</th><th>TIME</th><th>GAP</th>' + b.sectors.map(function (_, k) { return '<th>S' + (k + 1) + '</th>'; }).join('') + '<th>최고 km/h</th><th>구분</th></tr>';
     var kindName = { push: 'PUSH', cool: 'COOL DOWN', warm: 'WARM UP' };
     S.laps.forEach(function (l, j) {

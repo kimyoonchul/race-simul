@@ -52,7 +52,7 @@
       events.push({ t: l.t0 + 4.3, fn: function () {
         var prev = j > 0 ? S.laps[j - 1].kind : 'out';
         if (l.kind === prev) return;
-        if (l.kind === 'cool') HUD.banner('cool', 'COOL DOWN', '쿨다운 랩 — 브레이크와 타이어를 식힙니다', '디스크 온도는 열모델 추정값', Math.round(cur.brakeT / 10) * 10 + '°C', 4200);
+        if (l.kind === 'cool') HUD.banner('cool', 'COOL DOWN', '쿨다운 랩 — 브레이크와 타이어를 식힙니다', '', Math.round(cur.brakeT / 10) * 10 + '°C', 4200);
         else if (l.kind === 'push') HUD.banner('push', 'PUSH LAP', '어택 시작', l.prevBest != null ? '현재 베스트 ' + fmt(l.prevBest) : '', 'ATTACK', 3200);
         else HUD.banner('top', 'WARM UP', '웜업 랩 — 타이어에 열을 넣는 중', '', 'LAP ' + l.n, 3000);
       } });
